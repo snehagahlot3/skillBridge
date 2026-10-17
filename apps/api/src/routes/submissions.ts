@@ -21,7 +21,7 @@ export function submissionRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
 
-  app.post("/submit", requireRole("student"), async (c) => {
+  app.post("/submit", requireRole("user"), async (c) => {
     const db = c.var.db;
     const user = c.get("user") as AuthUser;
     const body = await c.req.json();
@@ -33,12 +33,15 @@ export function submissionRoutes() {
 
     const [project] = await db.select().from(projects).where(eq(projects.id, milestone.projectId));
     if (!project) return c.json({ error: "Project not found" }, 404);
+    if (project.status !== "assigned" && project.status !== "in_progress" && project.status !== "submitted") {
+      return c.json({ error: "Project is not accepting submissions" }, 400);
+    }
 
     const id = crypto.randomUUID();
     await db.insert(submissions).values({
       id,
       milestoneId: parsed.data.milestoneId,
-      studentId: user.id,
+      applicantId: user.id,
       notes: parsed.data.notes,
       fileUrls: JSON.stringify(parsed.data.fileUrls),
     });
@@ -48,6 +51,8 @@ export function submissionRoutes() {
     const allMilestones = await db.select().from(milestones).where(eq(milestones.projectId, project.id));
     if (allMilestones.every((m) => m.status === "submitted" || m.status === "approved")) {
       await transitionProjectStatus(db, project.id, "submitted", user.id);
+    } else if (project.status === "assigned") {
+      await transitionProjectStatus(db, project.id, "in_progress", user.id);
     }
 
     return c.json({ id, submittedAt: new Date().toISOString() }, 201);
@@ -61,9 +66,9 @@ export function submissionRoutes() {
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     if (!project) return c.json({ error: "Not found" }, 404);
 
-    const isOwner = project.smeId === user.id;
-    const isMentor = project.mentorId === user.id;
-    if (!isOwner && !isMentor && user.role !== "admin") {
+    const isOwner = project.ownerId === user.id;
+    const isMentor = project.mentorId === user.id || user.role === "mentor";
+    if (!isOwner && !isMentor) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -76,12 +81,12 @@ export function submissionRoutes() {
     const enriched = await Promise.all(
       relevant.map(async (s) => {
         const [milestone] = await db.select().from(milestones).where(eq(milestones.id, s.milestoneId));
-        const [student] = await db.select().from(users).where(eq(users.id, s.studentId));
+        const [applicant] = await db.select().from(users).where(eq(users.id, s.applicantId));
         return {
           ...s,
           fileUrls: JSON.parse(s.fileUrls || "[]"),
           milestone: milestone ? { title: milestone.title, status: milestone.status } : null,
-          student: student ? { name: student.name } : null,
+          applicant: applicant ? { id: applicant.id, name: applicant.name } : null,
         };
       })
     );
@@ -89,11 +94,11 @@ export function submissionRoutes() {
     return c.json(enriched);
   });
 
-  app.get("/mine", requireRole("student"), async (c) => {
+  app.get("/mine", requireRole("user"), async (c) => {
     const db = c.var.db;
     const user = c.get("user") as AuthUser;
 
-    const mine = await db.select().from(submissions).where(eq(submissions.studentId, user.id));
+    const mine = await db.select().from(submissions).where(eq(submissions.applicantId, user.id));
     const enriched = await Promise.all(
       mine.map(async (s) => {
         const [milestone] = await db.select().from(milestones).where(eq(milestones.id, s.milestoneId));
@@ -112,7 +117,7 @@ export function submissionRoutes() {
     return c.json(enriched);
   });
 
-  app.post("/upload-url", requireRole("student", "sme"), async (c) => {
+  app.post("/upload-url", requireRole("user", "mentor"), async (c) => {
     const body = await c.req.json();
     const parsed = uploadUrlSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
@@ -122,8 +127,4 @@ export function submissionRoutes() {
   });
 
   return app;
-}
-
-async function createPresignedUrl(bucket: R2Bucket, key: string, contentType: string): Promise<string> {
-  return `${key}`;
 }

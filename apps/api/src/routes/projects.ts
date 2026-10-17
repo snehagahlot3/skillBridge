@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
-import { projects, applications, milestones, users, smeProfiles } from "../db/schema";
+import { projects, applications, milestones, users, businessProfiles } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import { transitionProjectStatus, type ProjectStatus } from "../lib/stateMachine";
 import type { AppEnv, AuthUser } from "../types";
@@ -30,7 +30,7 @@ export function projectRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
 
-  app.post("/", requireRole("sme"), async (c) => {
+  app.post("/", requireRole("user"), async (c) => {
     const db = c.var.db;
     const user = c.get("user") as AuthUser;
     const body = await c.req.json();
@@ -40,7 +40,7 @@ export function projectRoutes() {
     const id = crypto.randomUUID();
     await db.insert(projects).values({
       id,
-      smeId: user.id,
+      ownerId: user.id,
       ...parsed.data,
       requiredSkills: JSON.stringify(parsed.data.requiredSkills),
       rubric: parsed.data.rubric ? JSON.stringify(parsed.data.rubric) : null,
@@ -59,7 +59,7 @@ export function projectRoutes() {
     const conditions = [];
     if (status) conditions.push(eq(projects.status, status as ProjectStatus));
     if (category) conditions.push(eq(projects.category, category));
-    if (mine === "1") conditions.push(eq(projects.smeId, user.id));
+    if (mine === "1") conditions.push(eq(projects.ownerId, user.id));
 
     const baseQuery = db.select().from(projects);
     const allProjects = await (conditions.length > 0
@@ -75,20 +75,27 @@ export function projectRoutes() {
       });
     }
 
-    const withSme = await Promise.all(
+    const withOwner = await Promise.all(
       filtered.map(async (p) => {
-        const [sme] = await db.select().from(users).where(eq(users.id, p.smeId));
-        const [smeProfile] = await db.select().from(smeProfiles).where(eq(smeProfiles.userId, p.smeId));
+        const [owner] = await db.select().from(users).where(eq(users.id, p.ownerId));
+        const [business] = await db.select().from(businessProfiles).where(eq(businessProfiles.userId, p.ownerId));
         return {
           ...p,
           requiredSkills: JSON.parse(p.requiredSkills || "[]"),
           rubric: p.rubric ? JSON.parse(p.rubric) : null,
-          sme: sme ? { name: sme.name, businessName: smeProfile?.businessName, verificationStatus: smeProfile?.verificationStatus } : null,
+          owner: owner
+            ? {
+                id: owner.id,
+                name: owner.name,
+                businessName: business?.businessName ?? null,
+                verificationStatus: business?.verificationStatus ?? "unverified",
+              }
+            : null,
         };
       })
     );
 
-    return c.json(withSme);
+    return c.json(withOwner);
   });
 
   app.get("/:id", async (c) => {
@@ -97,8 +104,8 @@ export function projectRoutes() {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return c.json({ error: "Not found" }, 404);
 
-    const [sme] = await db.select().from(users).where(eq(users.id, project.smeId));
-    const [smeProfile] = await db.select().from(smeProfiles).where(eq(smeProfiles.userId, project.smeId));
+    const [owner] = await db.select().from(users).where(eq(users.id, project.ownerId));
+    const [business] = await db.select().from(businessProfiles).where(eq(businessProfiles.userId, project.ownerId));
     const projectMilestones = await db.select().from(milestones).where(eq(milestones.projectId, id));
     const projectApplications = await db.select().from(applications).where(eq(applications.projectId, id));
 
@@ -106,20 +113,27 @@ export function projectRoutes() {
       ...project,
       requiredSkills: JSON.parse(project.requiredSkills || "[]"),
       rubric: project.rubric ? JSON.parse(project.rubric) : null,
-      sme: sme ? { name: sme.name, businessName: smeProfile?.businessName, verificationStatus: smeProfile?.verificationStatus } : null,
+      owner: owner
+        ? {
+            id: owner.id,
+            name: owner.name,
+            businessName: business?.businessName ?? null,
+            verificationStatus: business?.verificationStatus ?? "unverified",
+          }
+        : null,
       milestones: projectMilestones,
       applications: projectApplications,
     });
   });
 
-  app.patch("/:id/publish", requireRole("sme"), async (c) => {
+  app.patch("/:id/publish", requireRole("user"), async (c) => {
     const db = c.var.db;
     const user = c.get("user") as AuthUser;
     const { id } = c.req.param();
 
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     if (!project) return c.json({ error: "Not found" }, 404);
-    if (project.smeId !== user.id) return c.json({ error: "Forbidden" }, 403);
+    if (project.ownerId !== user.id) return c.json({ error: "Forbidden" }, 403);
 
     const result = await transitionProjectStatus(db, id, "open", user.id);
     if (!result.ok) return c.json({ error: result.error }, 400);

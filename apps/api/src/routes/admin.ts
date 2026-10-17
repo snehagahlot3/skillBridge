@@ -1,20 +1,20 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { users, smeProfiles, mentorProfiles, projects, auditLog } from "../db/schema";
+import { users, profiles, businessProfiles, mentorProfiles, projects, auditLog } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
 export function adminRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
-  app.use("*", requireRole("admin"));
+  app.use("*", requireRole("mentor"));
 
-  app.get("/smes", async (c) => {
+  app.get("/businesses", async (c) => {
     const db = c.var.db;
-    const profiles = await db.select().from(smeProfiles);
+    const profilesList = await db.select().from(businessProfiles);
     const enriched = await Promise.all(
-      profiles.map(async (p) => {
+      profilesList.map(async (p) => {
         const [user] = await db.select().from(users).where(eq(users.id, p.userId));
         return { ...p, name: user?.name, email: user?.email };
       })
@@ -22,17 +22,20 @@ export function adminRoutes() {
     return c.json(enriched);
   });
 
-  app.patch("/smes/:userId/verify", async (c) => {
+  app.patch("/businesses/:userId/verify", async (c) => {
     const db = c.var.db;
     const actor = c.get("user");
     const { userId } = c.req.param();
 
-    await db.update(smeProfiles).set({ verificationStatus: "verified" }).where(eq(smeProfiles.userId, userId));
+    await db
+      .update(businessProfiles)
+      .set({ verificationStatus: "verified" })
+      .where(eq(businessProfiles.userId, userId));
     await db.insert(auditLog).values({
       id: crypto.randomUUID(),
       actorId: actor.id,
-      action: "sme_verified",
-      entity: "sme_profile",
+      action: "business_verified",
+      entity: "business_profile",
       entityId: userId,
     });
 
@@ -41,11 +44,31 @@ export function adminRoutes() {
 
   app.get("/mentors", async (c) => {
     const db = c.var.db;
-    const profiles = await db.select().from(mentorProfiles);
+    const profilesList = await db.select().from(mentorProfiles);
     const enriched = await Promise.all(
-      profiles.map(async (p) => {
+      profilesList.map(async (p) => {
         const [user] = await db.select().from(users).where(eq(users.id, p.userId));
         return { ...p, name: user?.name, email: user?.email, expertise: JSON.parse(p.expertise || "[]") };
+      })
+    );
+    return c.json(enriched);
+  });
+
+  app.get("/users", async (c) => {
+    const db = c.var.db;
+    const all = await db.select().from(users);
+    const enriched = await Promise.all(
+      all.map(async (u) => {
+        const [profile] = await db.select().from(profiles).where(eq(profiles.userId, u.id));
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          role: u.role,
+          college: profile?.college ?? null,
+          skills: profile ? JSON.parse(profile.skills || "[]") : [],
+          resumeKey: profile?.resumeKey ?? null,
+        };
       })
     );
     return c.json(enriched);
@@ -56,14 +79,15 @@ export function adminRoutes() {
     const all = await db.select().from(projects);
     const enriched = await Promise.all(
       all.map(async (p) => {
-        const [sme] = await db.select().from(users).where(eq(users.id, p.smeId));
+        const [owner] = await db.select().from(users).where(eq(users.id, p.ownerId));
+        const [business] = await db.select().from(businessProfiles).where(eq(businessProfiles.userId, p.ownerId));
         const [mentor] = p.mentorId
           ? await db.select().from(users).where(eq(users.id, p.mentorId))
           : [undefined];
         return {
           ...p,
           requiredSkills: JSON.parse(p.requiredSkills || "[]"),
-          sme: sme ? { name: sme.name } : null,
+          owner: owner ? { id: owner.id, name: owner.name, businessName: business?.businessName ?? null } : null,
           mentor: mentor ? { id: mentor.id, name: mentor.name } : null,
         };
       })

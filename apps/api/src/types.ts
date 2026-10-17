@@ -12,12 +12,11 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: "sme" | "student" | "mentor" | "admin";
+  role: "user" | "mentor";
 }
 
 export interface Variables {
   db: DB;
-  env: Env;
   user: AuthUser;
 }
 

@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { createDb } from "./db";
 import type { AppEnv } from "./types";
 import { authRoutes } from "./routes/auth";
+import { profileRoutes } from "./routes/profile";
 import { projectRoutes } from "./routes/projects";
 import { applicationRoutes } from "./routes/applications";
 import { submissionRoutes } from "./routes/submissions";
@@ -30,6 +31,7 @@ app.use("*", async (c, next) => {
 });
 
 app.route("/api/auth", authRoutes());
+app.route("/api/profile", profileRoutes());
 app.route("/api/projects", projectRoutes());
 app.route("/api/applications", applicationRoutes());
 app.route("/api/submissions", submissionRoutes());

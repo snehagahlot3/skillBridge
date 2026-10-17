@@ -1,16 +1,37 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
+// A single "user" account can both post projects (business side) and
+// work on/apply to projects (talent side). "mentor" is the admin panel.
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
-  role: text("role", { enum: ["sme", "student", "mentor", "admin"] }).notNull(),
+  role: text("role", { enum: ["user", "mentor"] }).notNull(),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
-export const smeProfiles = sqliteTable("sme_profiles", {
+// One profile per user. Holds contact + talent/portfolio info.
+export const profiles = sqliteTable("profiles", {
+  userId: text("user_id").primaryKey().references(() => users.id),
+  phone: text("phone"),
+  city: text("city"),
+  college: text("college"),
+  bio: text("bio"),
+  skills: text("skills"), // JSON array
+  publicSlug: text("public_slug").unique(),
+  passportConsent: integer("passport_consent", { mode: "boolean" }).default(false),
+  linkedin: text("linkedin"),
+  github: text("github"),
+  portfolio: text("portfolio"),
+  resumeKey: text("resume_key"), // R2 object key
+  resumeName: text("resume_name"),
+  updatedAt: text("updated_at").default(sql`(datetime('now'))`),
+});
+
+// Business details, added lazily when a user posts a project.
+export const businessProfiles = sqliteTable("business_profiles", {
   userId: text("user_id").primaryKey().references(() => users.id),
   businessName: text("business_name").notNull(),
   sector: text("sector"),
@@ -23,15 +44,6 @@ export const smeProfiles = sqliteTable("sme_profiles", {
   udyamNumber: text("udyam_number"),
 });
 
-export const studentProfiles = sqliteTable("student_profiles", {
-  userId: text("user_id").primaryKey().references(() => users.id),
-  college: text("college"),
-  bio: text("bio"),
-  skills: text("skills"), // JSON array
-  publicSlug: text("public_slug").unique(),
-  passportConsent: integer("passport_consent", { mode: "boolean" }).default(false),
-});
-
 export const mentorProfiles = sqliteTable("mentor_profiles", {
   userId: text("user_id").primaryKey().references(() => users.id),
   expertise: text("expertise"), // JSON array
@@ -41,7 +53,7 @@ export const mentorProfiles = sqliteTable("mentor_profiles", {
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
-  smeId: text("sme_id").notNull().references(() => users.id),
+  ownerId: text("owner_id").notNull().references(() => users.id),
   title: text("title").notNull(),
   description: text("description").notNull(),
   category: text("category").notNull(),
@@ -73,7 +85,7 @@ export const projects = sqliteTable("projects", {
 export const applications = sqliteTable("applications", {
   id: text("id").primaryKey(),
   projectId: text("project_id").notNull().references(() => projects.id),
-  studentId: text("student_id").notNull().references(() => users.id),
+  applicantId: text("applicant_id").notNull().references(() => users.id),
   pitch: text("pitch").notNull(),
   status: text("status", { enum: ["pending", "accepted", "rejected"] })
     .default("pending")
@@ -95,7 +107,7 @@ export const milestones = sqliteTable("milestones", {
 export const submissions = sqliteTable("submissions", {
   id: text("id").primaryKey(),
   milestoneId: text("milestone_id").notNull().references(() => milestones.id),
-  studentId: text("student_id").notNull().references(() => users.id),
+  applicantId: text("applicant_id").notNull().references(() => users.id),
   notes: text("notes"),
   fileUrls: text("file_urls"), // JSON array of R2 keys
   submittedAt: text("submitted_at").default(sql`(datetime('now'))`),
@@ -105,7 +117,7 @@ export const reviews = sqliteTable("reviews", {
   id: text("id").primaryKey(),
   submissionId: text("submission_id").notNull().references(() => submissions.id),
   reviewerId: text("reviewer_id").notNull().references(() => users.id),
-  reviewerType: text("reviewer_type", { enum: ["sme", "mentor"] }).notNull(),
+  reviewerType: text("reviewer_type", { enum: ["mentor"] }).notNull(),
   rubricScores: text("rubric_scores"), // JSON: [{criterion, score}]
   comments: text("comments"),
   decision: text("decision", { enum: ["approved", "revision", "rejected"] }).notNull(),
@@ -114,7 +126,7 @@ export const reviews = sqliteTable("reviews", {
 
 export const verifiedSkills = sqliteTable("verified_skills", {
   id: text("id").primaryKey(),
-  studentId: text("student_id").notNull().references(() => users.id),
+  userId: text("user_id").notNull().references(() => users.id),
   skill: text("skill").notNull(),
   level: text("level", { enum: ["Beginner", "Intermediate", "Advanced"] }).notNull(),
   projectId: text("project_id").notNull().references(() => projects.id),

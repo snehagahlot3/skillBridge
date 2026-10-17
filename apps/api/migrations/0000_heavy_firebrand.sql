@@ -1,12 +1,12 @@
 CREATE TABLE `applications` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
-	`student_id` text NOT NULL,
+	`applicant_id` text NOT NULL,
 	`pitch` text NOT NULL,
 	`status` text DEFAULT 'pending' NOT NULL,
 	`created_at` text DEFAULT (datetime('now')),
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`student_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`applicant_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `audit_log` (
@@ -17,6 +17,16 @@ CREATE TABLE `audit_log` (
 	`entity_id` text,
 	`details` text,
 	`timestamp` text DEFAULT (datetime('now'))
+);
+--> statement-breakpoint
+CREATE TABLE `business_profiles` (
+	`user_id` text PRIMARY KEY NOT NULL,
+	`business_name` text NOT NULL,
+	`sector` text,
+	`city` text,
+	`verification_status` text DEFAULT 'unverified' NOT NULL,
+	`udyam_number` text,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `mentor_profiles` (
@@ -37,9 +47,28 @@ CREATE TABLE `milestones` (
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
+CREATE TABLE `profiles` (
+	`user_id` text PRIMARY KEY NOT NULL,
+	`phone` text,
+	`city` text,
+	`college` text,
+	`bio` text,
+	`skills` text,
+	`public_slug` text,
+	`passport_consent` integer DEFAULT false,
+	`linkedin` text,
+	`github` text,
+	`portfolio` text,
+	`resume_key` text,
+	`resume_name` text,
+	`updated_at` text DEFAULT (datetime('now')),
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `profiles_public_slug_unique` ON `profiles` (`public_slug`);--> statement-breakpoint
 CREATE TABLE `projects` (
 	`id` text PRIMARY KEY NOT NULL,
-	`sme_id` text NOT NULL,
+	`owner_id` text NOT NULL,
 	`title` text NOT NULL,
 	`description` text NOT NULL,
 	`category` text NOT NULL,
@@ -52,7 +81,7 @@ CREATE TABLE `projects` (
 	`status` text DEFAULT 'draft' NOT NULL,
 	`mentor_id` text,
 	`created_at` text DEFAULT (datetime('now')),
-	FOREIGN KEY (`sme_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`owner_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`mentor_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
@@ -69,36 +98,15 @@ CREATE TABLE `reviews` (
 	FOREIGN KEY (`reviewer_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-CREATE TABLE `sme_profiles` (
-	`user_id` text PRIMARY KEY NOT NULL,
-	`business_name` text NOT NULL,
-	`sector` text,
-	`city` text,
-	`verification_status` text DEFAULT 'unverified' NOT NULL,
-	`udyam_number` text,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE TABLE `student_profiles` (
-	`user_id` text PRIMARY KEY NOT NULL,
-	`college` text,
-	`bio` text,
-	`skills` text,
-	`public_slug` text,
-	`passport_consent` integer DEFAULT false,
-	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `student_profiles_public_slug_unique` ON `student_profiles` (`public_slug`);--> statement-breakpoint
 CREATE TABLE `submissions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`milestone_id` text NOT NULL,
-	`student_id` text NOT NULL,
+	`applicant_id` text NOT NULL,
 	`notes` text,
 	`file_urls` text,
 	`submitted_at` text DEFAULT (datetime('now')),
 	FOREIGN KEY (`milestone_id`) REFERENCES `milestones`(`id`) ON UPDATE no action ON DELETE no action,
-	FOREIGN KEY (`student_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`applicant_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE TABLE `users` (
@@ -113,13 +121,13 @@ CREATE TABLE `users` (
 CREATE UNIQUE INDEX `users_email_unique` ON `users` (`email`);--> statement-breakpoint
 CREATE TABLE `verified_skills` (
 	`id` text PRIMARY KEY NOT NULL,
-	`student_id` text NOT NULL,
+	`user_id` text NOT NULL,
 	`skill` text NOT NULL,
 	`level` text NOT NULL,
 	`project_id` text NOT NULL,
 	`review_id` text NOT NULL,
 	`created_at` text DEFAULT (datetime('now')),
-	FOREIGN KEY (`student_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`review_id`) REFERENCES `reviews`(`id`) ON UPDATE no action ON DELETE no action
 );

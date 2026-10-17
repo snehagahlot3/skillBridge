@@ -4,10 +4,11 @@
   "private": true,
   "description": "SkillBridge — verified SME talent exchange (Phase 1)",
   "scripts": {
-    "install:all": "cd apps/api && npm install && cd ../web && npm install",
+    "install:all": "cd apps/api && npm install && cd ../web && npm install && cd ../web-react && npm install",
     "dev:api": "cd apps/api && npm run dev",
     "dev:web": "cd apps/web && npm run dev",
-    "typecheck": "cd apps/api && npm run typecheck && cd ../web && npx tsc --noEmit",
+    "dev:web-react": "cd apps/web-react && npm run dev",
+    "typecheck": "cd apps/api && npm run typecheck && cd ../web-react && npx tsc --noEmit",
     "db:generate": "cd apps/api && npm run db:generate",
     "db:migrate": "cd apps/api && npm run db:migrate",
     "db:seed": "cd apps/api && npm run db:seed",

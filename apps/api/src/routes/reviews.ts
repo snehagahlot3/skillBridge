@@ -3,7 +3,8 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { reviews, submissions, projects, milestones, verifiedSkills, auditLog } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
-import { transitionProjectStatus } from "../lib/stateMachine";
+import { transitionProjectStatus, canTransition, type ProjectStatus } from "../lib/stateMachine";
+import type { DB } from "../db";
 import type { AppEnv, AuthUser } from "../types";
 
 const reviewSchema = z.object({
@@ -22,7 +23,7 @@ export function reviewRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
 
-  app.post("/:submissionId/review", requireRole("sme", "mentor"), async (c) => {
+  app.post("/:submissionId/review", requireRole("mentor"), async (c) => {
     const db = c.var.db;
     const user = c.get("user") as AuthUser;
     const { submissionId } = c.req.param();
@@ -39,14 +40,12 @@ export function reviewRoutes() {
     const [project] = await db.select().from(projects).where(eq(projects.id, milestone.projectId));
     if (!project) return c.json({ error: "Project not found" }, 404);
 
-    const reviewerType = user.role === "mentor" ? "mentor" : "sme";
-
     const id = crypto.randomUUID();
     await db.insert(reviews).values({
       id,
       submissionId,
       reviewerId: user.id,
-      reviewerType,
+      reviewerType: "mentor",
       rubricScores: JSON.stringify(parsed.data.rubricScores),
       comments: parsed.data.comments,
       decision: parsed.data.decision,
@@ -57,24 +56,12 @@ export function reviewRoutes() {
 
       const allMilestones = await db.select().from(milestones).where(eq(milestones.projectId, project.id));
       if (allMilestones.every((m) => m.status === "approved")) {
-        await transitionProjectStatus(db, project.id, "under_review", user.id);
-      }
+        await transitionSafely(db, project.id, "under_review", user.id);
+        await transitionSafely(db, project.id, "completed", user.id);
 
-      const [smeReview] = await db
-        .select()
-        .from(reviews)
-        .where(eq(reviews.submissionId, submissionId));
-      const [mentorReview] = await db
-        .select()
-        .from(reviews)
-        .where(eq(reviews.submissionId, submissionId));
-
-      if (smeReview && mentorReview) {
-        await transitionProjectStatus(db, project.id, "completed", user.id);
-
-        const rubric: { criterion: string; maxScore: number }[] = JSON.parse(project.rubric || "[]");
-        const scores: { criterion: string; score: number }[] = JSON.parse(mentorReview.rubricScores || "[]");
-        const avg = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
+        const rubric: { criterion: string }[] = JSON.parse(project.rubric || "[]");
+        const scores = parsed.data.rubricScores;
+        const avg = scores.length ? scores.reduce((sum, s) => sum + s.score, 0) / scores.length : 3;
 
         let level: "Beginner" | "Intermediate" | "Advanced";
         if (avg >= 3.5) level = "Advanced";
@@ -82,13 +69,19 @@ export function reviewRoutes() {
         else level = "Beginner";
 
         for (const r of rubric) {
+          const already = await db
+            .select()
+            .from(verifiedSkills)
+            .where(eq(verifiedSkills.projectId, project.id));
+          if (already.some((v) => v.skill === r.criterion && v.userId === submission.applicantId)) continue;
+
           await db.insert(verifiedSkills).values({
             id: crypto.randomUUID(),
-            studentId: submission.studentId,
+            userId: submission.applicantId,
             skill: r.criterion,
             level,
             projectId: project.id,
-            reviewId: mentorReview.id,
+            reviewId: id,
           });
         }
 
@@ -102,11 +95,18 @@ export function reviewRoutes() {
         });
       }
     } else if (parsed.data.decision === "revision") {
-      await transitionProjectStatus(db, project.id, "revision_requested", user.id);
+      await transitionSafely(db, project.id, "revision_requested", user.id);
     }
 
     return c.json({ id, decision: parsed.data.decision }, 201);
   });
 
   return app;
+}
+
+async function transitionSafely(db: DB, projectId: string, to: ProjectStatus, actorId: string) {
+  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!project) return;
+  if (!canTransition(project.status, to)) return;
+  await transitionProjectStatus(db, projectId, to, actorId);
 }

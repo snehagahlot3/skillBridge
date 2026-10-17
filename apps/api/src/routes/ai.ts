@@ -33,7 +33,7 @@ export function aiRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
 
-  app.post("/project-brief", requireRole("sme"), async (c) => {
+  app.post("/project-brief", requireRole("user"), async (c) => {
     const body = await c.req.json();
     const parsed = briefSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
@@ -53,7 +53,7 @@ export function aiRoutes() {
 
 Business description: ${parsed.data.description}`;
 
-      const response = await c.var.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      const response = await c.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
         messages: [{ role: "user", content: prompt }],
         max_tokens: 1024,
       });

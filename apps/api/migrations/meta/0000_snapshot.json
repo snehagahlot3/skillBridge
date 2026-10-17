@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "098f7037-7464-4165-8d73-181d3fea1842",
+  "id": "81ae919f-16d6-47b8-ad0f-bd044babebe7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "applications": {
@@ -21,8 +21,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "student_id": {
-          "name": "student_id",
+        "applicant_id": {
+          "name": "applicant_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -67,12 +67,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "applications_student_id_users_id_fk": {
-          "name": "applications_student_id_users_id_fk",
+        "applications_applicant_id_users_id_fk": {
+          "name": "applications_applicant_id_users_id_fk",
           "tableFrom": "applications",
           "tableTo": "users",
           "columnsFrom": [
-            "student_id"
+            "applicant_id"
           ],
           "columnsTo": [
             "id"
@@ -141,6 +141,73 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "business_profiles": {
+      "name": "business_profiles",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "business_name": {
+          "name": "business_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sector": {
+          "name": "sector",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "verification_status": {
+          "name": "verification_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unverified'"
+        },
+        "udyam_number": {
+          "name": "udyam_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "business_profiles_user_id_users_id_fk": {
+          "name": "business_profiles_user_id_users_id_fk",
+          "tableFrom": "business_profiles",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
@@ -264,6 +331,138 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "profiles": {
+      "name": "profiles",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "college": {
+          "name": "college",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "skills": {
+          "name": "skills",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "public_slug": {
+          "name": "public_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "passport_consent": {
+          "name": "passport_consent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": false
+        },
+        "linkedin": {
+          "name": "linkedin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "github": {
+          "name": "github",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "portfolio": {
+          "name": "portfolio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resume_key": {
+          "name": "resume_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "resume_name": {
+          "name": "resume_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "(datetime('now'))"
+        }
+      },
+      "indexes": {
+        "profiles_public_slug_unique": {
+          "name": "profiles_public_slug_unique",
+          "columns": [
+            "public_slug"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "profiles_user_id_users_id_fk": {
+          "name": "profiles_user_id_users_id_fk",
+          "tableFrom": "profiles",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "projects": {
       "name": "projects",
       "columns": {
@@ -274,8 +473,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "sme_id": {
-          "name": "sme_id",
+        "owner_id": {
+          "name": "owner_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -370,12 +569,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "projects_sme_id_users_id_fk": {
-          "name": "projects_sme_id_users_id_fk",
+        "projects_owner_id_users_id_fk": {
+          "name": "projects_owner_id_users_id_fk",
           "tableFrom": "projects",
           "tableTo": "users",
           "columnsFrom": [
-            "sme_id"
+            "owner_id"
           ],
           "columnsTo": [
             "id"
@@ -495,148 +694,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "sme_profiles": {
-      "name": "sme_profiles",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "business_name": {
-          "name": "business_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "sector": {
-          "name": "sector",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "city": {
-          "name": "city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "verification_status": {
-          "name": "verification_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'unverified'"
-        },
-        "udyam_number": {
-          "name": "udyam_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "sme_profiles_user_id_users_id_fk": {
-          "name": "sme_profiles_user_id_users_id_fk",
-          "tableFrom": "sme_profiles",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "student_profiles": {
-      "name": "student_profiles",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "college": {
-          "name": "college",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "bio": {
-          "name": "bio",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "skills": {
-          "name": "skills",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "public_slug": {
-          "name": "public_slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "passport_consent": {
-          "name": "passport_consent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": false
-        }
-      },
-      "indexes": {
-        "student_profiles_public_slug_unique": {
-          "name": "student_profiles_public_slug_unique",
-          "columns": [
-            "public_slug"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "student_profiles_user_id_users_id_fk": {
-          "name": "student_profiles_user_id_users_id_fk",
-          "tableFrom": "student_profiles",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "submissions": {
       "name": "submissions",
       "columns": {
@@ -654,8 +711,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "student_id": {
-          "name": "student_id",
+        "applicant_id": {
+          "name": "applicant_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -699,12 +756,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "submissions_student_id_users_id_fk": {
-          "name": "submissions_student_id_users_id_fk",
+        "submissions_applicant_id_users_id_fk": {
+          "name": "submissions_applicant_id_users_id_fk",
           "tableFrom": "submissions",
           "tableTo": "users",
           "columnsFrom": [
-            "student_id"
+            "applicant_id"
           ],
           "columnsTo": [
             "id"
@@ -788,8 +845,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "student_id": {
-          "name": "student_id",
+        "user_id": {
+          "name": "user_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -834,12 +891,12 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "verified_skills_student_id_users_id_fk": {
-          "name": "verified_skills_student_id_users_id_fk",
+        "verified_skills_user_id_users_id_fk": {
+          "name": "verified_skills_user_id_users_id_fk",
           "tableFrom": "verified_skills",
           "tableTo": "users",
           "columnsFrom": [
-            "student_id"
+            "user_id"
           ],
           "columnsTo": [
             "id"
