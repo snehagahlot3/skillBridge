@@ -223,6 +223,7 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
   const [content, setContent] = useState("");
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
+  const [gateValue, setGateValue] = useState(job.aiGateThreshold != null ? String(job.aiGateThreshold) : "");
 
   async function run(fn: () => Promise<unknown>, msg: string) {
     setBusy(true);
@@ -231,6 +232,20 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
       onError(msg);
       setRevising(null);
       setContent("");
+      onChanged();
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setGate(value: string) {
+    setBusy(true);
+    try {
+      const threshold = value ? Number(value) : null;
+      await api.mentorAiGate(job.id, threshold);
+      onError(threshold == null ? "AI review gate disabled." : `AI review gate set to ${threshold}/5.`);
       onChanged();
     } catch (err) {
       onError((err as Error).message);
@@ -308,6 +323,24 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
             <MessageCircle strokeWidth={1.5} className="w-4 h-4 text-ink" /> Open chat (owner ↔ talent)
           </Link>
           <Link to={`/jobs/${job.id}`} className="btn-ghost">Full job page</Link>
+        </section>
+
+        <section className="border-t pt-4">
+          <h4 className="font-semibold text-sm text-gray-700 mb-2">AI review gate</h4>
+          <p className="text-xs text-gray-500 mb-2">
+            Require a passing AI code review before the FINAL milestone can be approved.
+          </p>
+          <div className="flex items-center gap-2">
+            <select className="input max-w-xs" value={gateValue} onChange={(e) => { setGateValue(e.target.value); setGate(e.target.value); }}>
+              <option value="">Off</option>
+              <option value="3">Require ≥ 3/5</option>
+              <option value="4">Require ≥ 4/5</option>
+              <option value="5">Require ≥ 5/5</option>
+            </select>
+            {job.aiGateThreshold != null && (
+              <span className="badge bg-brand-50 text-brand-700">final milestone gated at {job.aiGateThreshold}/5</span>
+            )}
+          </div>
         </section>
       </div>
 

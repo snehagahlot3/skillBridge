@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and } from "drizzle-orm";
-import { milestones, jobs, jobUpdates, teamMembers } from "../db/schema";
+import { eq, and, desc } from "drizzle-orm";
+import { milestones, jobs, jobUpdates, teamMembers, aiRepos, reviewRuns } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
@@ -66,6 +66,42 @@ export function milestoneRoutes() {
     if (!job) return c.json({ error: "Job not found" }, 404);
     if (job.mentorId !== user.id && user.role !== "admin") {
       return c.json({ error: "Only the assigned mentor can approve milestones" }, 403);
+    }
+
+    // AI review gate applies to the FINAL milestone only
+    if (job.aiGateThreshold != null) {
+      const jobMilestones = await db
+        .select()
+        .from(milestones)
+        .where(eq(milestones.jobId, job.id));
+      const maxOrder = Math.max(...jobMilestones.map((m) => m.order));
+      if (milestone.order === maxOrder) {
+        const repos = await db.select().from(aiRepos).where(eq(aiRepos.jobId, job.id));
+        if (!repos.length) {
+          return c.json({ error: "AI review gate is on but no repository is linked to this job" }, 400);
+        }
+        let bestRating: number | null = null;
+        for (const r of repos) {
+          const [last] = await db
+            .select()
+            .from(reviewRuns)
+            .where(eq(reviewRuns.repoId, r.id))
+            .orderBy(desc(reviewRuns.createdAt))
+            .limit(1);
+          if (last && last.status === "done" && last.rating != null) {
+            bestRating = bestRating == null ? last.rating : Math.max(bestRating, last.rating);
+          }
+        }
+        if (bestRating == null) {
+          return c.json({ error: "No AI review yet — run a review before approving the final milestone" }, 400);
+        }
+        if (bestRating < job.aiGateThreshold) {
+          return c.json(
+            { error: `Latest AI review rating (${bestRating}/5) is below the required ${job.aiGateThreshold}/5` },
+            400
+          );
+        }
+      }
     }
 
     await db.update(milestones).set({ status: "approved" }).where(eq(milestones.id, id));

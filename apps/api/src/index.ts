@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createDb } from "./db";
-import type { AppEnv } from "./types";
+import type { AppEnv, Env } from "./types";
+import { pollAllRepos } from "./lib/reviewEngine";
 import { authRoutes } from "./routes/auth";
 import { profileRoutes } from "./routes/profile";
 import { jobRoutes } from "./routes/jobs";
@@ -51,5 +52,11 @@ app.onError((err, c) => {
   return c.json({ error: "Internal server error" }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  // Cron: poll connected repos for new commits and review them.
+  scheduled: async (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(pollAllRepos(env));
+  },
+};
 export { ChatRoom } from "./durable/chat";

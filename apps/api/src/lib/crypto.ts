@@ -58,3 +58,70 @@ function timingSafeEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
 }
+
+// ---- AES-GCM token encryption (for GitHub PATs stored in D1) ----
+
+function toB64(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+function fromB64(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function deriveTokenKey(secret: string): Promise<CryptoKey> {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: new TextEncoder().encode("skillbridge-github-agent"), iterations: 100_000, hash: "SHA-256" },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+export async function encryptToken(plain: string, secret: string): Promise<string> {
+  const key = await deriveTokenKey(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(plain)
+  );
+  return `${toB64(iv)}.${toB64(new Uint8Array(cipher))}`;
+}
+
+export async function decryptToken(stored: string, secret: string): Promise<string> {
+  const [ivB64, cipherB64] = stored.split(".");
+  const key = await deriveTokenKey(secret);
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromB64(ivB64) },
+    key,
+    fromB64(cipherB64)
+  );
+  return new TextDecoder().decode(plain);
+}
+
+export async function verifyHmacHex(message: string, secret: string, expectedHex: string): Promise<boolean> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  const actualHex = toHex(new Uint8Array(sig));
+  return timingSafeEqual(actualHex, expectedHex.replace(/^sha256=/i, ""));
+}

@@ -86,6 +86,9 @@ export const jobs = sqliteTable("jobs", {
     .default("draft")
     .notNull(),
   mentorId: text("mentor_id").references(() => users.id),
+  // When set by the mentor, the final milestone cannot be approved unless
+  // the latest AI code review rating is >= this threshold.
+  aiGateThreshold: real("ai_gate_threshold"),
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
@@ -175,4 +178,38 @@ export const auditLog = sqliteTable("audit_log", {
   entityId: text("entity_id"),
   details: text("details"),
   timestamp: text("timestamp").default(sql`(datetime('now'))`),
+});
+
+// AI GitHub code-review agent
+export const aiRepos = sqliteTable("ai_repos", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  owner: text("owner").notNull(),
+  repo: text("repo").notNull(),
+  branch: text("branch").default("main").notNull(),
+  tokenEnc: text("token_enc").notNull(), // AES-GCM iv+ciphertext, base64
+  jobId: text("job_id").references(() => jobs.id),
+  ghLogin: text("gh_login"),
+  lastReviewedSha: text("last_reviewed_sha"),
+  status: text("status", { enum: ["active", "paused"] })
+    .default("active")
+    .notNull(),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
+export const reviewRuns = sqliteTable("review_runs", {
+  id: text("id").primaryKey(),
+  repoId: text("repo_id").notNull().references(() => aiRepos.id),
+  commitSha: text("commit_sha").notNull(),
+  commitMessage: text("commit_message"),
+  status: text("status", { enum: ["running", "done", "failed"] }).notNull(),
+  kind: text("kind", { enum: ["commit", "pr"] }).default("commit").notNull(),
+  prNumber: integer("pr_number"),
+  summary: text("summary"),
+  rating: real("rating"),
+  findings: text("findings"), // JSON array
+  suggestedFixes: text("suggested_fixes"), // JSON array
+  commentUrl: text("comment_url"),
+  tokensUsed: integer("tokens_used"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
 });

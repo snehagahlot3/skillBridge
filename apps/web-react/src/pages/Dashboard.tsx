@@ -5,8 +5,9 @@ import { api, budgetLabel, type Job, type MyApplication, type ChatRoomSummary, t
 import { useAuth } from "../context/AuthContext";
 import { Stars, StatusBadge, VerifiedBadge } from "../components/ui";
 import Assistant from "../components/Assistant";
+import CodeReviews from "../components/CodeReviews";
 
-type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "ai";
+type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "ai" | "repos";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -56,6 +57,7 @@ export default function Dashboard() {
     { id: "mywork", label: "My Work" },
     { id: "messages", label: `Messages${rooms.some((r) => r.unread > 0) ? ` (${rooms.reduce((s, r) => s + r.unread, 0)})` : ""}` },
     { id: "ai", label: "AI Help" },
+    { id: "repos", label: "Code Reviews" },
     { id: "profile", label: "Profile" },
   ];
 
@@ -116,6 +118,7 @@ export default function Dashboard() {
         {tab === "mywork" && <MyWork items={myWork} />}
         {tab === "messages" && <Messages rooms={rooms} onOpened={() => setTimeout(loadAll, 500)} />}
         {tab === "ai" && <Assistant />}
+        {tab === "repos" && <CodeReviews />}
         {tab === "profile" && <ProfileTab onChanged={refresh} onError={setToast} />}
       </main>
     </div>

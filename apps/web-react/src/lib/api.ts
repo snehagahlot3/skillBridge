@@ -88,6 +88,7 @@ export interface Job {
   acceptanceCriteria: string | null;
   status: JobStatus;
   mentorId: string | null;
+  aiGateThreshold?: number | null;
   createdAt: string;
   owner?: { id: string; name: string; businessName: string | null; verificationStatus: string; slug: string | null } | null;
   mentor?: { id: string; name: string } | null;
@@ -99,6 +100,21 @@ export interface Job {
   team?: TeamMember[];
   updates?: JobUpdate[];
   reviews?: JobReview[];
+  aiRepos?: {
+    id: string;
+    owner: string;
+    repo: string;
+    branch: string;
+    lastReviewedSha: string | null;
+    lastRun: {
+      commitSha: string;
+      status: "running" | "done" | "failed";
+      rating: number | null;
+      summary: string | null;
+      commentUrl: string | null;
+      createdAt: string;
+    } | null;
+  }[];
   myRole?: "owner" | "team" | "mentor" | "admin" | null;
 }
 
@@ -244,6 +260,50 @@ export interface Brief {
   acceptanceCriteria: string;
   estimatedEffort: string;
   suggestedRubric: { criterion: string; description: string; maxScore: number }[];
+}
+
+export interface AiRepo {
+  id: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  status: "active" | "paused";
+  jobId: string | null;
+  jobTitle: string | null;
+  lastReviewedSha: string | null;
+  createdAt: string;
+  lastRun: {
+    id: string;
+    commitSha: string;
+    status: "running" | "done" | "failed";
+    rating: number | null;
+    summary: string | null;
+    createdAt: string;
+  } | null;
+}
+
+export interface ReviewFinding {
+  file: string;
+  line: number | null;
+  severity: "critical" | "high" | "medium" | "low";
+  issue: string;
+  suggestion: string;
+}
+
+export interface ReviewRun {
+  id: string;
+  commitSha: string;
+  commitMessage: string | null;
+  status: "running" | "done" | "failed";
+  kind?: "commit" | "pr";
+  prNumber?: number | null;
+  summary: string | null;
+  rating: number | null;
+  findings: ReviewFinding[];
+  suggestedFixes: string[];
+  commentUrl: string | null;
+  tokensUsed: number | null;
+  createdAt: string;
 }
 
 export interface MentorJob extends Job {
@@ -556,6 +616,10 @@ class ApiClient {
     return this.fetch(`/mentor/jobs/${id}/release`, { method: "POST" });
   }
 
+  mentorAiGate(id: string, threshold: number | null) {
+    return this.fetch(`/mentor/jobs/${id}/ai-gate`, { method: "POST", body: JSON.stringify({ threshold }) });
+  }
+
   // ---- admin ----
   adminGetStats(): Promise<AdminStats> {
     return this.fetch("/admin/stats");
@@ -640,6 +704,26 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ mode, message, history, jobId }),
     });
+  }
+
+  aiGithubConnect(data: { owner: string; repo: string; token: string; branch?: string; jobId?: string }) {
+    return this.fetch("/ai/github/repos", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  aiGithubRepos(): Promise<AiRepo[]> {
+    return this.fetch("/ai/github/repos");
+  }
+
+  aiGithubReview(repoId: string): Promise<ReviewRun> {
+    return this.fetch(`/ai/github/repos/${repoId}/review`, { method: "POST" });
+  }
+
+  aiGithubRuns(repoId: string): Promise<ReviewRun[]> {
+    return this.fetch(`/ai/github/repos/${repoId}/runs`);
+  }
+
+  aiGithubDelete(repoId: string) {
+    return this.fetch(`/ai/github/repos/${repoId}`, { method: "DELETE" });
   }
 
   generateBrief(description: string, language: string = "en"): Promise<Brief> {

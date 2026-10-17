@@ -11,6 +11,8 @@ import {
   jobUpdates,
   reviews,
   teamMembers,
+  aiRepos,
+  reviewRuns,
 } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
 import { transitionJobStatus, type JobStatus } from "../lib/stateMachine";
@@ -282,6 +284,39 @@ export function jobRoutes() {
       visibleApplications = jobApplications.filter((a) => a.applicantId === user.id);
     }
 
+    // Linked code-review repos (participants only)
+    let linkedRepos: typeof aiRepos.$inferSelect[] = [];
+    if (isOwner || isMentor || isAdmin || onTeam) {
+      linkedRepos = await db.select().from(aiRepos).where(eq(aiRepos.jobId, id));
+    }
+    const aiReposEnriched = await Promise.all(
+      linkedRepos.map(async (r) => {
+        const [lastRun] = await db
+          .select()
+          .from(reviewRuns)
+          .where(eq(reviewRuns.repoId, r.id))
+          .orderBy(desc(reviewRuns.createdAt))
+          .limit(1);
+        return {
+          id: r.id,
+          owner: r.owner,
+          repo: r.repo,
+          branch: r.branch,
+          lastReviewedSha: r.lastReviewedSha,
+          lastRun: lastRun
+            ? {
+                commitSha: lastRun.commitSha,
+                status: lastRun.status,
+                rating: lastRun.rating,
+                summary: lastRun.summary,
+                commentUrl: lastRun.commentUrl,
+                createdAt: lastRun.createdAt,
+              }
+            : null,
+        };
+      })
+    );
+
     return c.json({
       ...details,
       milestones: jobMilestones,
@@ -289,6 +324,7 @@ export function jobRoutes() {
       team,
       updates,
       reviews: enrichedReviews,
+      aiRepos: aiReposEnriched,
       myRole: isOwner ? "owner" : onTeam ? "team" : isMentor ? "mentor" : isAdmin ? "admin" : null,
     });
   });
