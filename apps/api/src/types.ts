@@ -4,6 +4,7 @@ export interface Env {
   DB: D1Database;
   BUCKET: R2Bucket;
   AI: any;
+  CHAT_ROOM: DurableObjectNamespace;
   JWT_SECRET: string;
   FRONTEND_URL: string;
 }
@@ -12,7 +13,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  role: "user" | "mentor";
+  role: "user" | "mentor" | "admin";
 }
 
 export interface Variables {

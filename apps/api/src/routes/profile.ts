@@ -14,7 +14,6 @@ const profileSchema = z.object({
   linkedin: z.string().optional(),
   github: z.string().optional(),
   portfolio: z.string().optional(),
-  passportConsent: z.boolean().optional(),
 });
 
 const businessSchema = z.object({

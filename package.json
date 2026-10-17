@@ -1,17 +1,20 @@
 {
   "name": "skillbridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "SkillBridge — verified SME talent exchange (Phase 1)",
+  "description": "SkillBridge — jobs marketplace with quotes, chat and mentors (Phase 2)",
   "scripts": {
-    "install:all": "cd apps/api && npm install && cd ../web && npm install && cd ../web-react && npm install",
+    "install:all": "cd apps/api && npm install && cd ../web-react && npm install",
     "dev:api": "cd apps/api && npm run dev",
-    "dev:web": "cd apps/web && npm run dev",
-    "dev:web-react": "cd apps/web-react && npm run dev",
+    "dev:web": "cd apps/web-react && npm run dev",
+    "build:web": "cd apps/web-react && npm run build",
     "typecheck": "cd apps/api && npm run typecheck && cd ../web-react && npx tsc --noEmit",
     "db:generate": "cd apps/api && npm run db:generate",
     "db:migrate": "cd apps/api && npm run db:migrate",
     "db:seed": "cd apps/api && npm run db:seed",
-    "deploy:api": "cd apps/api && npm run deploy"
+    "test:local": "powershell -ExecutionPolicy Bypass -File scripts/test-local.ps1 -Base http://127.0.0.1:8787",
+    "test:ws": "node scripts/ws-test.mjs http://127.0.0.1:8787 job-004",
+    "deploy:api": "cd apps/api && npm run deploy",
+    "deploy:web": "cd apps/web-react && npm run build && wrangler pages deploy dist --project-name skillbridge"
   }
 }

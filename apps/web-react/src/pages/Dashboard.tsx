@@ -1,32 +1,35 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { FileText, Github, Linkedin, Globe, Upload } from "lucide-react";
-import { api, type Application, type MyApplication, type Project } from "../lib/api";
+import { Upload } from "lucide-react";
+import { api, budgetLabel, type Job, type MyApplication, type ChatRoomSummary, type JobReview, type PublicUser } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { Stars, StatusBadge } from "../components/ui";
 
-type Tab = "find" | "mywork" | "projects" | "profile";
+type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile";
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user, me, refresh, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("find");
-
-  const [openProjects, setOpenProjects] = useState<Project[]>([]);
+  const [openJobs, setOpenJobs] = useState<Job[]>([]);
+  const [myJobs, setMyJobs] = useState<Job[]>([]);
   const [myWork, setMyWork] = useState<MyApplication[]>([]);
-  const [myProjects, setMyProjects] = useState<Project[]>([]);
+  const [rooms, setRooms] = useState<ChatRoomSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
 
   async function loadAll() {
     try {
-      const [open, mine, posted] = await Promise.all([
-        api.getProjects({ status: "open" }),
+      const [open, posted, mine, chatRooms] = await Promise.all([
+        api.getJobs({ status: "open" }),
+        api.getJobs({ mine: true }),
         api.getMyApplications(),
-        api.getProjects({ mine: true }),
+        api.getChatRooms().catch(() => [] as ChatRoomSummary[]),
       ]);
-      setOpenProjects(open);
+      setOpenJobs(open);
+      setMyJobs(posted);
       setMyWork(mine);
-      setMyProjects(posted);
+      setRooms(chatRooms);
     } catch (err) {
       console.error(err);
     } finally {
@@ -47,11 +50,14 @@ export default function Dashboard() {
   if (loading) return <div className="p-8">Loading...</div>;
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "find", label: "Find Work" },
+    { id: "find", label: "Find Jobs" },
+    { id: "myjobs", label: "My Jobs" },
     { id: "mywork", label: "My Work" },
-    { id: "projects", label: "My Projects" },
+    { id: "messages", label: `Messages${rooms.some((r) => r.unread > 0) ? ` (${rooms.reduce((s, r) => s + r.unread, 0)})` : ""}` },
     { id: "profile", label: "Profile" },
   ];
+
+  const totalUnread = rooms.reduce((s, r) => s + r.unread, 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -59,14 +65,12 @@ export default function Dashboard() {
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-brand-600">SkillBridge</h1>
-            {me?.business?.verificationStatus === "verified" && (
-              <span className="badge-verified">Verified business</span>
-            )}
+            {me?.business?.verificationStatus === "verified" && <span className="badge-verified">Verified business</span>}
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-600">{user?.name}</span>
             {me?.profile?.publicSlug && (
-              <Link to={`/passport/${me.profile.publicSlug}`} className="btn-ghost text-sm">My Passport</Link>
+              <Link to={`/users/${user?.id}`} className="btn-ghost text-sm">Public profile</Link>
             )}
             <button onClick={signOut} className="btn-ghost">Sign out</button>
           </div>
@@ -78,297 +82,136 @@ export default function Dashboard() {
           {tabs.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} className={tab === t.id ? "btn-primary" : "btn-secondary"}>
               {t.label}
+              {t.id === "messages" && totalUnread > 0 && (
+                <span className="ml-1 rounded-full bg-brand-600 text-white text-xs px-1.5">{totalUnread}</span>
+              )}
             </button>
           ))}
         </div>
 
         {toast && <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
 
-        {tab === "find" && <FindWork projects={openProjects} onApplied={() => { setToast("Application submitted."); loadAll(); }} onError={setToast} />}
-        {tab === "mywork" && <MyWork items={myWork} onSubmitted={() => { setToast("Work submitted for review."); loadAll(); }} onError={setToast} />}
-        {tab === "projects" && <MyProjects projects={myProjects} onChanged={() => { loadAll(); refresh(); }} onError={setToast} />}
+        {tab === "find" && <FindJobs jobs={openJobs} />}
+        {tab === "myjobs" && <MyJobs jobs={myJobs} onChanged={loadAll} onError={setToast} />}
+        {tab === "mywork" && <MyWork items={myWork} />}
+        {tab === "messages" && <Messages rooms={rooms} onOpened={() => setTimeout(loadAll, 500)} />}
         {tab === "profile" && <ProfileTab onChanged={refresh} onError={setToast} />}
       </main>
     </div>
   );
 }
 
-function FindWork({ projects, onApplied, onError }: { projects: Project[]; onApplied: () => void; onError: (m: string) => void }) {
+function FindJobs({ jobs }: { jobs: Job[] }) {
   const [skillFilter, setSkillFilter] = useState("");
-  const [applyingTo, setApplyingTo] = useState<Project | null>(null);
-  const [pitch, setPitch] = useState("");
-  const [busy, setBusy] = useState(false);
-
   const filtered = skillFilter
-    ? projects.filter((p) => p.requiredSkills?.some((s) => s.toLowerCase().includes(skillFilter.toLowerCase())))
-    : projects;
-
-  async function apply() {
-    if (!applyingTo) return;
-    setBusy(true);
-    try {
-      await api.applyToProject(applyingTo.id, pitch);
-      setApplyingTo(null);
-      setPitch("");
-      onApplied();
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    ? jobs.filter((j) => j.requiredSkills?.some((s) => s.toLowerCase().includes(skillFilter.toLowerCase())))
+    : jobs;
 
   return (
     <>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-2xl font-bold">Open Projects</h2>
+        <h2 className="text-2xl font-bold">Open jobs</h2>
         <input className="input max-w-xs" placeholder="Filter by skill..." value={skillFilter} onChange={(e) => setSkillFilter(e.target.value)} />
       </div>
       <div className="grid gap-4">
-        {filtered.map((project) => (
-          <div key={project.id} className="card">
+        {filtered.map((job) => (
+          <div key={job.id} className="card">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <Link to={`/projects/${project.id}`} className="font-semibold text-lg hover:underline">{project.title}</Link>
-                <p className="text-sm text-gray-600 mt-1">{project.description}</p>
+                <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
+                <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 160)}{job.description.length > 160 ? "…" : ""}</p>
                 <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className={`badge ${project.budgetType === "paid" ? "badge-paid" : "badge-unpaid"}`}>{project.budgetType}</span>
-                  {project.owner?.businessName && <span className="badge bg-gray-100 text-gray-700">{project.owner.businessName}</span>}
-                  {project.owner?.verificationStatus === "verified" && <span className="badge-verified">Verified</span>}
+                  <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
+                  <span className="badge bg-gray-100 text-gray-700">{job.category}</span>
+                  {job.owner?.businessName && <span className="badge bg-gray-100 text-gray-700">{job.owner.businessName}</span>}
+                  {job.owner?.verificationStatus === "verified" && <span className="badge-verified">Verified</span>}
+                  {job.applicationCount != null && <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quotes</span>}
                 </div>
               </div>
-              <button onClick={() => setApplyingTo(project)} className="btn-primary shrink-0">Apply</button>
+              <Link to={`/jobs/${job.id}`} className="btn-primary shrink-0">View &amp; quote</Link>
             </div>
-            {project.requiredSkills?.length > 0 && (
+            {job.requiredSkills?.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1">
-                {project.requiredSkills.map((skill) => (
+                {job.requiredSkills.map((skill) => (
                   <span key={skill} className="badge bg-gray-100 text-gray-700">{skill}</span>
                 ))}
               </div>
             )}
           </div>
         ))}
-        {filtered.length === 0 && <div className="card text-center text-gray-500">No open projects found.</div>}
+        {filtered.length === 0 && <div className="card text-center text-gray-500">No open jobs found.</div>}
       </div>
-
-      {applyingTo && (
-        <Modal title="Apply to project" onClose={() => setApplyingTo(null)}>
-          <p className="text-sm text-gray-600 mb-3">{applyingTo.title}</p>
-          <textarea className="input" rows={4} placeholder="Write a short pitch: why are you a good fit?"
-            value={pitch} onChange={(e) => setPitch(e.target.value)} />
-          <div className="flex gap-2 mt-4">
-            <button onClick={apply} className="btn-primary" disabled={busy || pitch.trim().length < 20}>
-              {busy ? "Submitting..." : "Submit application"}
-            </button>
-            <button onClick={() => setApplyingTo(null)} className="btn-ghost">Cancel</button>
-          </div>
-          <p className="text-xs text-gray-400 mt-2">Pitch must be at least 20 characters.</p>
-        </Modal>
-      )}
     </>
   );
 }
 
-function MyWork({ items, onSubmitted, onError }: { items: MyApplication[]; onSubmitted: () => void; onError: (m: string) => void }) {
-  const [submitting, setSubmitting] = useState<{ milestoneId: string; title: string } | null>(null);
-  const [notes, setNotes] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function submit() {
-    if (!submitting) return;
-    setBusy(true);
-    try {
-      await api.submitWork({ milestoneId: submitting.milestoneId, notes, fileUrls: [] });
-      setSubmitting(null);
-      setNotes("");
-      onSubmitted();
-    } catch (err) {
-      onError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <h2 className="text-2xl font-bold mb-4">My Work</h2>
-      <div className="grid gap-4">
-        {items.map((app) => (
-          <div key={app.id} className="card">
-            <div className="flex items-start justify-between">
-              <h3 className="font-semibold text-lg">{app.project?.title}</h3>
-              <span className={`badge ${app.status === "accepted" ? "badge-verified" : app.status === "rejected" ? "badge-unpaid" : "badge-pending"}`}>{app.status}</span>
-            </div>
-            {app.status === "accepted" && app.milestones?.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {app.milestones.map((m) => (
-                  <div key={m.id} className="flex items-center justify-between rounded-lg bg-gray-50 p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className={`w-2 h-2 rounded-full ${m.status === "approved" ? "bg-green-500" : m.status === "submitted" ? "bg-yellow-500" : "bg-gray-300"}`} />
-                      <span>{m.title}</span>
-                      <span className="badge bg-gray-100 text-gray-600">{m.status}</span>
-                    </div>
-                    {m.status === "pending" && (
-                      <button onClick={() => setSubmitting({ milestoneId: m.id, title: m.title })} className="btn-secondary">Submit work</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-        {items.length === 0 && <div className="card text-center text-gray-500">You have not applied to any projects yet.</div>}
-      </div>
-
-      {submitting && (
-        <Modal title="Submit work" onClose={() => setSubmitting(null)}>
-          <p className="text-sm text-gray-600 mb-3">{submitting.title}</p>
-          <label className="label">Notes / links to your work</label>
-          <textarea className="input" rows={4} placeholder="Describe what you delivered and paste any links..."
-            value={notes} onChange={(e) => setNotes(e.target.value)} />
-          <div className="flex gap-2 mt-4">
-            <button onClick={submit} className="btn-primary" disabled={busy}>{busy ? "Submitting..." : "Submit for review"}</button>
-            <button onClick={() => setSubmitting(null)} className="btn-ghost">Cancel</button>
-          </div>
-        </Modal>
-      )}
-    </>
-  );
-}
-
-function MyProjects({ projects, onChanged, onError }: { projects: Project[]; onChanged: () => void; onError: (m: string) => void }) {
-  const { me } = useAuth();
+function MyJobs({ jobs, onChanged, onError }: { jobs: Job[]; onChanged: () => Promise<void>; onError: (m: string) => void }) {
   const [showForm, setShowForm] = useState(false);
-  const [applicants, setApplicants] = useState<{ project: Project; items: Application[] } | null>(null);
-
-  async function publish(id: string) {
-    try {
-      await api.publishProject(id);
-      onChanged();
-    } catch (err) {
-      onError((err as Error).message);
-    }
-  }
-
-  async function openApplicants(project: Project) {
-    try {
-      const items = await api.getApplications(project.id);
-      setApplicants({ project, items });
-    } catch (err) {
-      onError((err as Error).message);
-    }
-  }
-
-  async function accept(applicationId: string) {
-    try {
-      await api.acceptApplication(applicationId);
-      setApplicants(null);
-      onChanged();
-    } catch (err) {
-      onError((err as Error).message);
-    }
-  }
 
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold">My Projects</h2>
-        <button onClick={() => setShowForm(true)} className="btn-primary">Post a project</button>
+        <h2 className="text-2xl font-bold">Jobs I posted</h2>
+        <button onClick={() => setShowForm(true)} className="btn-primary">Post a job</button>
       </div>
 
-      {showForm && <PostProjectForm defaultBusiness={me?.business ?? null} onDone={() => { setShowForm(false); onChanged(); }} onError={onError} />}
+      {showForm && <PostJobForm onDone={() => { setShowForm(false); onChanged(); }} onError={onError} />}
 
       <div className="grid gap-4">
-        {projects.map((project) => (
-          <div key={project.id} className="card">
-            <div className="flex items-start justify-between gap-4">
+        {jobs.map((job) => (
+          <div key={job.id} className="card">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
               <div>
-                <h3 className="font-semibold text-lg">{project.title}</h3>
-                <p className="text-sm text-gray-600 mt-1">{project.description}</p>
-                <div className="flex gap-2 mt-2">
-                  <span className={`badge ${project.budgetType === "paid" ? "badge-paid" : "badge-unpaid"}`}>{project.budgetType}</span>
-                  <span className={`badge ${project.status === "open" ? "badge-verified" : "badge-pending"}`}>{project.status}</span>
+                <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
+                <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 140)}{job.description.length > 140 ? "…" : ""}</p>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
+                  <StatusBadge status={job.status} />
+                  {job.applicationCount != null && job.applicationCount > 0 && (
+                    <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quote{job.applicationCount === 1 ? "" : "s"}</span>
+                  )}
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
-                {project.status !== "draft" && <button onClick={() => openApplicants(project)} className="btn-secondary">Applicants</button>}
-                {project.status === "draft" && <button onClick={() => publish(project.id)} className="btn-primary">Publish</button>}
-              </div>
+              <Link to={`/jobs/${job.id}`} className="btn-secondary shrink-0">Manage</Link>
             </div>
           </div>
         ))}
-        {projects.length === 0 && <div className="card text-center text-gray-500">No projects yet. Post your first project!</div>}
+        {jobs.length === 0 && <div className="card text-center text-gray-500">No jobs posted yet. Post your first job!</div>}
       </div>
-
-      {applicants && (
-        <Modal title={`Applicants — ${applicants.project.title}`} onClose={() => setApplicants(null)}>
-          <div className="space-y-3">
-            {applicants.items.map((a) => {
-              const applicant = a.applicant;
-              return (
-                <div key={a.id} className="rounded-lg border border-gray-200 p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="font-medium">{applicant?.name}</p>
-                    <span className={`badge ${a.status === "accepted" ? "badge-verified" : a.status === "rejected" ? "badge-unpaid" : "badge-pending"}`}>{a.status}</span>
-                  </div>
-                  {applicant?.college && <p className="text-sm text-gray-500">{applicant.college}</p>}
-                  {applicant && applicant.skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {applicant.skills.map((s) => <span key={s} className="badge bg-gray-100 text-gray-700">{s}</span>)}
-                    </div>
-                  )}
-                  <p className="text-sm text-gray-600 mt-1">{a.pitch}</p>
-                  <div className="flex items-center gap-3 mt-2">
-                    {applicant?.linkedin && <a href={applicant.linkedin} target="_blank" rel="noreferrer" className="text-brand-600"><Linkedin className="w-4 h-4" /></a>}
-                    {applicant?.github && <a href={applicant.github} target="_blank" rel="noreferrer" className="text-gray-700"><Github className="w-4 h-4" /></a>}
-                    {applicant?.portfolio && <a href={applicant.portfolio} target="_blank" rel="noreferrer" className="text-gray-700"><Globe className="w-4 h-4" /></a>}
-                    {applicant?.resumeKey && (
-                      <button onClick={() => api.downloadResume(applicant.id)} className="text-sm text-brand-600 hover:underline inline-flex items-center gap-1">
-                        <FileText className="w-4 h-4" /> Resume
-                      </button>
-                    )}
-                    {a.status === "pending" && <button onClick={() => accept(a.id)} className="btn-primary ml-auto">Accept</button>}
-                  </div>
-                </div>
-              );
-            })}
-            {applicants.items.length === 0 && <p className="text-gray-500">No applicants yet.</p>}
-          </div>
-        </Modal>
-      )}
     </>
   );
 }
 
-function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness: { businessName: string; sector: string | null; city: string | null } | null; onDone: () => void; onError: (m: string) => void }) {
+function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: string) => void }) {
   const [aiDescription, setAiDescription] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
-  const [rubric, setRubric] = useState<Project["rubric"]>([]);
+  const [aiBrief, setAiBrief] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     title: "",
     description: "",
     category: "",
     requiredSkills: "",
-    budgetType: "unpaid" as Project["budgetType"],
+    positions: "",
+    budgetMin: "",
+    budgetMax: "",
     deadline: "",
     acceptanceCriteria: "",
-    businessName: defaultBusiness?.businessName || "",
-    sector: defaultBusiness?.sector || "",
-    city: defaultBusiness?.city || "",
+    milestones: "",
   });
 
   async function generateBrief() {
     setAiLoading(true);
     try {
       const brief = await api.generateBrief(aiDescription);
-      setRubric(brief.suggestedRubric);
+      setAiBrief(brief.title);
       setForm((f) => ({
         ...f,
         title: brief.title,
         description: brief.summary,
         requiredSkills: brief.requiredSkills.join(", "),
         acceptanceCriteria: brief.acceptanceCriteria,
+        milestones: brief.milestones.map((m) => `${m.title} (due ${m.dueDate})`).join("\n"),
       }));
     } catch (err) {
       onError((err as Error).message);
@@ -380,18 +223,30 @@ function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness
   async function create() {
     setBusy(true);
     try {
-      if (form.businessName) {
-        await api.updateBusiness({ businessName: form.businessName, sector: form.sector, city: form.city });
-      }
-      await api.createProject({
+      const positions = form.positions
+        .split("\n")
+        .map((line) => {
+          const m = line.match(/^(.*?)\s*[x×*]\s*(\d+)\s*$/i);
+          return m ? { title: m[1].trim(), count: Number(m[2]) } : { title: line.trim(), count: 1 };
+        })
+        .filter((p) => p.title);
+      await api.createJob({
         title: form.title,
         description: form.description,
         category: form.category,
         requiredSkills: form.requiredSkills.split(",").map((s) => s.trim()).filter(Boolean),
-        budgetType: form.budgetType,
+        positions,
+        budgetMin: form.budgetMin ? Number(form.budgetMin) : undefined,
+        budgetMax: form.budgetMax ? Number(form.budgetMax) : undefined,
         deadline: form.deadline || undefined,
-        acceptanceCriteria: form.acceptanceCriteria,
-        rubric: rubric || [],
+        acceptanceCriteria: form.acceptanceCriteria || undefined,
+        milestones: form.milestones
+          .split("\n")
+          .map((line) => {
+            const m = line.match(/^(.*?)\s*\(due\s*(.*?)\)\s*$/i);
+            return m ? { title: m[1].trim(), dueDate: m[2].trim() } : { title: line.trim() };
+          })
+          .filter((m) => m.title),
       });
       onDone();
     } catch (err) {
@@ -403,33 +258,16 @@ function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness
 
   return (
     <div className="card mb-6">
-      <h3 className="font-semibold text-lg mb-4">Post a new project</h3>
+      <h3 className="font-semibold text-lg mb-4">Post a new job</h3>
       <div className="space-y-5">
         <section>
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">Business details</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="label">Business name</label>
-              <input className="input" value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Sector</label>
-              <input className="input" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">City</label>
-              <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
-            </div>
-          </div>
-        </section>
-
-        <section>
-          <label className="label">Describe your problem in plain language</label>
-          <textarea className="input" rows={3} placeholder="e.g. We keep running out of stock and need a simple dashboard to track inventory levels..."
+          <label className="label">Describe the job in plain language (AI will structure it)</label>
+          <textarea className="input" rows={3} placeholder="e.g. We need a Diwali sale campaign for our store: Instagram posts, reel scripts and a caption calendar..."
             value={aiDescription} onChange={(e) => setAiDescription(e.target.value)} />
           <button onClick={generateBrief} className="btn-secondary mt-2" disabled={aiLoading || aiDescription.trim().length < 20}>
             {aiLoading ? "Generating..." : "Generate AI brief"}
           </button>
+          {aiBrief && <p className="mt-2 text-sm text-brand-700">AI brief generated — edit the fields below before publishing.</p>}
         </section>
 
         <section className="border-t pt-4">
@@ -440,7 +278,7 @@ function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness
             </div>
             <div>
               <label className="label">Category</label>
-              <input className="input" placeholder="Dashboard, Automation, CAD" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              <input className="input" placeholder="Marketing, Video Editing, Web Design, Software..." value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
             </div>
           </div>
           <div className="mt-4">
@@ -448,35 +286,41 @@ function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness
             <textarea className="input" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-            <div className="md:col-span-2">
-              <label className="label">Required skills (comma-separated)</label>
-              <input className="input" value={form.requiredSkills} onChange={(e) => setForm({ ...form, requiredSkills: e.target.value })} />
+            <div>
+              <label className="label">Budget min (₹)</label>
+              <input type="number" min="0" className="input" placeholder="5000" value={form.budgetMin} onChange={(e) => setForm({ ...form, budgetMin: e.target.value })} />
             </div>
             <div>
-              <label className="label">Budget type</label>
-              <select className="input" value={form.budgetType} onChange={(e) => setForm({ ...form, budgetType: e.target.value as Project["budgetType"] })}>
-                <option value="unpaid">Unpaid (educational)</option>
-                <option value="stipend">Stipend</option>
-                <option value="paid">Paid</option>
-              </select>
+              <label className="label">Budget max (₹)</label>
+              <input type="number" min="0" className="input" placeholder="8000" value={form.budgetMax} onChange={(e) => setForm({ ...form, budgetMax: e.target.value })} />
             </div>
+            <div>
+              <label className="label">Deadline</label>
+              <input type="date" className="input" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="label">Required skills (comma-separated)</label>
+            <input className="input" value={form.requiredSkills} onChange={(e) => setForm({ ...form, requiredSkills: e.target.value })} />
+          </div>
+          <div className="mt-4">
+            <label className="label">Team positions (one per line: "Title x3", e.g. Marketing x3, Graphic Designer x1)</label>
+            <textarea className="input" rows={3} placeholder={"Marketing x3\nGraphic Designer x1\nContent Creator x1"}
+              value={form.positions} onChange={(e) => setForm({ ...form, positions: e.target.value })} />
           </div>
           <div className="mt-4">
             <label className="label">Acceptance criteria</label>
             <textarea className="input" rows={2} value={form.acceptanceCriteria} onChange={(e) => setForm({ ...form, acceptanceCriteria: e.target.value })} />
           </div>
-          {rubric && rubric.length > 0 && (
-            <div className="mt-4 rounded-lg bg-brand-50 p-3 text-sm">
-              <p className="font-medium text-brand-800 mb-1">Rubric ({rubric.length} criteria)</p>
-              <ul className="list-disc list-inside text-brand-800">
-                {rubric.map((r) => <li key={r.criterion}>{r.criterion}</li>)}
-              </ul>
-            </div>
-          )}
+          <div className="mt-4">
+            <label className="label">Milestones (one per line, optional: "Title (due YYYY-MM-DD)")</label>
+            <textarea className="input" rows={3} placeholder={"Concept (due 2026-11-01)\nFinal delivery (due 2026-11-10)"}
+              value={form.milestones} onChange={(e) => setForm({ ...form, milestones: e.target.value })} />
+          </div>
         </section>
 
         <div className="flex gap-2">
-          <button onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
+          <button onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category || !form.positions.trim()}>
             {busy ? "Saving..." : "Save as draft"}
           </button>
           <button onClick={onDone} className="btn-ghost">Cancel</button>
@@ -486,8 +330,80 @@ function PostProjectForm({ defaultBusiness, onDone, onError }: { defaultBusiness
   );
 }
 
+function MyWork({ items }: { items: MyApplication[] }) {
+  return (
+    <>
+      <h2 className="text-2xl font-bold mb-4">My applications &amp; work</h2>
+      <div className="grid gap-4">
+        {items.map((app) => {
+          const hired = app.status === "accepted" && app.onTeam;
+          return (
+            <div key={app.id} className="card">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <Link to={`/jobs/${app.jobId}`} className="font-semibold text-lg hover:underline">
+                    {app.job?.title || "Job"}
+                  </Link>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    <span className={`badge ${hired ? "badge-verified" : app.status === "rejected" ? "bg-gray-100 text-gray-500" : "badge-pending"}`}>
+                      {hired ? "hired" : app.status}
+                    </span>
+                    {app.positionTitle && <span className="badge bg-brand-50 text-brand-700">{app.positionTitle}</span>}
+                    {app.job && <StatusBadge status={app.job.status} />}
+                    {app.job && <span className="badge bg-gray-100 text-gray-700">{budgetLabel(app.job)}</span>}
+                    {app.quoteAmount != null && <span className="badge bg-gray-100 text-gray-700">Your quote: ₹{app.quoteAmount.toLocaleString("en-IN")}</span>}
+                  </div>
+                  {hired && app.milestones.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {app.milestones.map((m) => (
+                        <span key={m.id} className="badge bg-gray-100 text-gray-600">
+                          {m.status === "approved" ? "✓" : m.status === "submitted" ? "•" : "○"} {m.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {hired && <Link to={`/chat/${app.jobId}`} className="btn-secondary">Chat</Link>}
+                  <Link to={`/jobs/${app.jobId}`} className="btn-primary">Open</Link>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {items.length === 0 && <div className="card text-center text-gray-500">You haven't applied to any jobs yet.</div>}
+      </div>
+    </>
+  );
+}
+
+function Messages({ rooms, onOpened }: { rooms: ChatRoomSummary[]; onOpened: () => void }) {
+  return (
+    <>
+      <h2 className="text-2xl font-bold mb-4">Messages</h2>
+      <div className="grid gap-3">
+        {rooms.map((room) => (
+          <Link key={room.jobId} to={`/chat/${room.jobId}`} onClick={onOpened} className="card flex items-center justify-between hover:shadow-md transition-shadow">
+            <div>
+              <p className="font-semibold">{room.title}</p>
+              <p className="text-sm text-gray-500">
+                Group chat
+                {room.teamNames.length > 0 && <> · team: {room.teamNames.join(", ")}</>}
+                {room.mentorName && <> · mentor: {room.mentorName}</>}
+                {" "}· <StatusBadge status={room.status} />
+              </p>
+            </div>
+            {room.unread > 0 && <span className="rounded-full bg-brand-600 text-white text-xs font-semibold px-2 py-1">{room.unread} new</span>}
+          </Link>
+        ))}
+        {rooms.length === 0 && <div className="card text-center text-gray-500">No conversations yet. Chat opens once a job is awarded.</div>}
+      </div>
+    </>
+  );
+}
+
 function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | void; onError: (m: string) => void }) {
-  const { me } = useAuth();
+  const { me, user } = useAuth();
   const [form, setForm] = useState({
     phone: "",
     city: "",
@@ -497,11 +413,11 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
     linkedin: "",
     github: "",
     portfolio: "",
-    passportConsent: false,
   });
   const [business, setBusiness] = useState({ businessName: "", sector: "", city: "", udyamNumber: "" });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [publicData, setPublicData] = useState<PublicUser | null>(null);
 
   useEffect(() => {
     if (me?.profile) {
@@ -514,7 +430,6 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
         linkedin: me.profile.linkedin || "",
         github: me.profile.github || "",
         portfolio: me.profile.portfolio || "",
-        passportConsent: Boolean(me.profile.passportConsent),
       });
     }
     if (me?.business) {
@@ -525,7 +440,10 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
         udyamNumber: me.business.udyamNumber || "",
       });
     }
-  }, [me]);
+    if (user) {
+      api.getUser(user.id).then(setPublicData).catch(() => setPublicData(null));
+    }
+  }, [me, user]);
 
   async function saveProfile() {
     setSaving(true);
@@ -539,7 +457,6 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
         linkedin: form.linkedin,
         github: form.github,
         portfolio: form.portfolio,
-        passportConsent: form.passportConsent,
       });
       await onChanged();
       onError("Profile saved.");
@@ -579,7 +496,7 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
   }
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
+    <div className="grid lg:grid-cols-3 gap-6">
       <div className="card">
         <h3 className="font-semibold text-lg mb-4">Talent profile</h3>
         <div className="space-y-4">
@@ -605,7 +522,7 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
             <label className="label">Bio</label>
             <textarea className="input" rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
           </div>
-          <div className="grid grid-cols-1 gap-4">
+          <div className="space-y-4">
             <div>
               <label className="label">LinkedIn</label>
               <input className="input" value={form.linkedin} onChange={(e) => setForm({ ...form, linkedin: e.target.value })} />
@@ -632,21 +549,13 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={form.passportConsent} onChange={(e) => setForm({ ...form, passportConsent: e.target.checked })} />
-            Make my Skill Passport public
-          </label>
-          {form.passportConsent && me?.profile?.publicSlug && (
-            <p className="text-sm text-gray-500">Public link: <Link className="text-brand-600 hover:underline" to={`/passport/${me.profile.publicSlug}`}>/passport/{me.profile.publicSlug}</Link></p>
-          )}
-
           <button onClick={saveProfile} className="btn-primary" disabled={saving}>{saving ? "Saving..." : "Save profile"}</button>
         </div>
       </div>
 
       <div className="card">
         <h3 className="font-semibold text-lg mb-4">Business details</h3>
-        <p className="text-sm text-gray-500 mb-4">Add these when you want to post projects as a business.</p>
+        <p className="text-sm text-gray-500 mb-4">Add these when you want to post jobs as a business.</p>
         <div className="space-y-4">
           <div>
             <label className="label">Business name</label>
@@ -662,6 +571,10 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
               <input className="input" value={business.city} onChange={(e) => setBusiness({ ...business, city: e.target.value })} />
             </div>
           </div>
+          <div>
+            <label className="label">Udyam number</label>
+            <input className="input" value={business.udyamNumber} onChange={(e) => setBusiness({ ...business, udyamNumber: e.target.value })} />
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-sm text-gray-600">Verification:</span>
             <span className={me?.business?.verificationStatus === "verified" ? "badge-verified" : "badge-pending"}>
@@ -673,19 +586,41 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
           </button>
         </div>
       </div>
-    </div>
-  );
-}
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="card w-full max-w-lg max-h-[85vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg">{title}</h3>
-          <button onClick={onClose} className="btn-ghost">✕</button>
-        </div>
-        {children}
+      <div className="card">
+        <h3 className="font-semibold text-lg mb-4">My stats &amp; reviews</h3>
+        {publicData ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-xl font-bold">{publicData.stats.jobsPosted}</p>
+                <p className="text-xs text-gray-500">Jobs posted</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-xl font-bold">{publicData.stats.jobsCompleted}</p>
+                <p className="text-xs text-gray-500">Jobs done</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-xl font-bold">{publicData.stats.reviewCount}</p>
+                <p className="text-xs text-gray-500">Reviews</p>
+              </div>
+            </div>
+            <div><Stars value={publicData.stats.avgRating} /></div>
+            {publicData.reviews.length === 0 && <p className="text-sm text-gray-500">No reviews yet.</p>}
+            {publicData.reviews.slice(0, 5).map((r: JobReview) => (
+              <div key={r.id} className="rounded-lg bg-gray-50 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">{r.reviewerName}</span>
+                  <Stars value={r.rating} />
+                </div>
+                {r.comment && <p className="text-sm text-gray-600 mt-1">{r.comment}</p>}
+                {r.jobTitle && <p className="text-xs text-gray-400 mt-1">on “{r.jobTitle}”</p>}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Loading...</p>
+        )}
       </div>
     </div>
   );

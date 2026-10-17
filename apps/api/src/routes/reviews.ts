@@ -1,112 +1,115 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { reviews, submissions, projects, milestones, verifiedSkills, auditLog } from "../db/schema";
-import { authMiddleware, requireRole } from "../middleware/auth";
-import { transitionProjectStatus, canTransition, type ProjectStatus } from "../lib/stateMachine";
-import type { DB } from "../db";
-import type { AppEnv, AuthUser } from "../types";
+import { eq, desc, and } from "drizzle-orm";
+import { reviews, jobs, users, teamMembers } from "../db/schema";
+import { authMiddleware } from "../middleware/auth";
+import type { AppEnv } from "../types";
 
 const reviewSchema = z.object({
-  submissionId: z.string(),
-  rubricScores: z.array(
-    z.object({
-      criterion: z.string(),
-      score: z.number().min(1).max(4),
-    })
-  ),
-  comments: z.string(),
-  decision: z.enum(["approved", "revision", "rejected"]),
+  revieweeId: z.string().min(1),
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().optional(),
 });
+
+async function onTeam(db: AppEnv["Variables"]["db"], jobId: string, userId: string) {
+  const rows = await db
+    .select()
+    .from(teamMembers)
+    .where(and(eq(teamMembers.jobId, jobId), eq(teamMembers.userId, userId)));
+  return rows.length > 0;
+}
 
 export function reviewRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
 
-  app.post("/:submissionId/review", requireRole("mentor"), async (c) => {
+  // Leave a review on a completed job.
+  // Owner reviews each team member; each team member reviews the owner.
+  app.post("/jobs/:jobId/review", async (c) => {
     const db = c.var.db;
-    const user = c.get("user") as AuthUser;
-    const { submissionId } = c.req.param();
+    const user = c.get("user");
+    const { jobId } = c.req.param();
     const body = await c.req.json();
     const parsed = reviewSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-    const [submission] = await db.select().from(submissions).where(eq(submissions.id, submissionId));
-    if (!submission) return c.json({ error: "Submission not found" }, 404);
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.status !== "completed") {
+      return c.json({ error: "Reviews can only be left after the job is completed" }, 400);
+    }
 
-    const [milestone] = await db.select().from(milestones).where(eq(milestones.id, submission.milestoneId));
-    if (!milestone) return c.json({ error: "Milestone not found" }, 404);
+    const reviewerIsOwner = job.ownerId === user.id;
+    const reviewerOnTeam = await onTeam(db, jobId, user.id);
+    if (!reviewerIsOwner && !reviewerOnTeam) {
+      return c.json({ error: "Only the owner and hired team members can review this job" }, 403);
+    }
 
-    const [project] = await db.select().from(projects).where(eq(projects.id, milestone.projectId));
-    if (!project) return c.json({ error: "Project not found" }, 404);
+    const revieweeId = parsed.data.revieweeId;
+    if (revieweeId === user.id) return c.json({ error: "You cannot review yourself" }, 400);
+
+    if (reviewerIsOwner) {
+      // owner -> must be a team member
+      const valid = await onTeam(db, jobId, revieweeId);
+      if (!valid) return c.json({ error: "The reviewee must be a member of the hired team" }, 400);
+    } else {
+      // team member -> must be the owner
+      if (revieweeId !== job.ownerId) {
+        return c.json({ error: "Team members can only review the job owner" }, 400);
+      }
+    }
+
+    const existing = await db
+      .select()
+      .from(reviews)
+      .where(
+        and(
+          eq(reviews.jobId, jobId),
+          eq(reviews.reviewerId, user.id),
+          eq(reviews.revieweeId, revieweeId)
+        )
+      );
+    if (existing.length) return c.json({ error: "You already reviewed this person for this job" }, 409);
 
     const id = crypto.randomUUID();
     await db.insert(reviews).values({
       id,
-      submissionId,
+      jobId,
       reviewerId: user.id,
-      reviewerType: "mentor",
-      rubricScores: JSON.stringify(parsed.data.rubricScores),
-      comments: parsed.data.comments,
-      decision: parsed.data.decision,
+      revieweeId,
+      rating: parsed.data.rating,
+      comment: parsed.data.comment,
     });
 
-    if (parsed.data.decision === "approved") {
-      await db.update(milestones).set({ status: "approved" }).where(eq(milestones.id, milestone.id));
+    const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
+    return c.json(review, 201);
+  });
 
-      const allMilestones = await db.select().from(milestones).where(eq(milestones.projectId, project.id));
-      if (allMilestones.every((m) => m.status === "approved")) {
-        await transitionSafely(db, project.id, "under_review", user.id);
-        await transitionSafely(db, project.id, "completed", user.id);
+  // Public: reviews received by a user
+  app.get("/users/:userId/reviews", async (c) => {
+    const db = c.var.db;
+    const { userId } = c.req.param();
 
-        const rubric: { criterion: string }[] = JSON.parse(project.rubric || "[]");
-        const scores = parsed.data.rubricScores;
-        const avg = scores.length ? scores.reduce((sum, s) => sum + s.score, 0) / scores.length : 3;
+    const received = await db
+      .select()
+      .from(reviews)
+      .where(eq(reviews.revieweeId, userId))
+      .orderBy(desc(reviews.createdAt));
 
-        let level: "Beginner" | "Intermediate" | "Advanced";
-        if (avg >= 3.5) level = "Advanced";
-        else if (avg >= 2.5) level = "Intermediate";
-        else level = "Beginner";
+    const enriched = await Promise.all(
+      received.map(async (r) => {
+        const [reviewer] = await db.select().from(users).where(eq(users.id, r.reviewerId));
+        const [job] = await db.select().from(jobs).where(eq(jobs.id, r.jobId));
+        return {
+          ...r,
+          reviewerName: reviewer?.name || "Unknown",
+          jobTitle: job?.title || null,
+        };
+      })
+    );
 
-        for (const r of rubric) {
-          const already = await db
-            .select()
-            .from(verifiedSkills)
-            .where(eq(verifiedSkills.projectId, project.id));
-          if (already.some((v) => v.skill === r.criterion && v.userId === submission.applicantId)) continue;
-
-          await db.insert(verifiedSkills).values({
-            id: crypto.randomUUID(),
-            userId: submission.applicantId,
-            skill: r.criterion,
-            level,
-            projectId: project.id,
-            reviewId: id,
-          });
-        }
-
-        await db.insert(auditLog).values({
-          id: crypto.randomUUID(),
-          actorId: user.id,
-          action: "project_completed",
-          entity: "project",
-          entityId: project.id,
-          details: JSON.stringify({ verifiedSkills: rubric.map((r) => r.criterion) }),
-        });
-      }
-    } else if (parsed.data.decision === "revision") {
-      await transitionSafely(db, project.id, "revision_requested", user.id);
-    }
-
-    return c.json({ id, decision: parsed.data.decision }, 201);
+    return c.json(enriched);
   });
 
   return app;
-}
-
-async function transitionSafely(db: DB, projectId: string, to: ProjectStatus, actorId: string) {
-  const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-  if (!project) return;
-  if (!canTransition(project.status, to)) return;
-  await transitionProjectStatus(db, projectId, to, actorId);
 }

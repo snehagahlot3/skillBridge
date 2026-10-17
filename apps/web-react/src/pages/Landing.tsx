@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { Briefcase, GraduationCap, Compass } from "lucide-react";
 
 export default function Landing() {
   return (
@@ -7,7 +6,7 @@ export default function Landing() {
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
           <h1 className="text-xl font-bold text-brand-600">SkillBridge</h1>
-          <nav className="flex gap-2">
+          <nav className="flex gap-4">
             <Link to="/login" className="btn-ghost">Sign in</Link>
             <Link to="/signup" className="btn-primary">Get started</Link>
           </nav>
@@ -17,40 +16,39 @@ export default function Landing() {
       <main className="mx-auto max-w-6xl px-4 py-16">
         <div className="text-center max-w-3xl mx-auto">
           <h2 className="text-4xl font-bold text-gray-900 mb-4">
-            One account. Work on projects or get work done.
+            Real projects for businesses. Real experience for talent.
           </h2>
           <p className="text-lg text-gray-600 mb-8">
-            Post a project when you need something built. Apply to projects when you want to build.
-            Mentor-reviewed work becomes verified evidence on your Skill Passport.
+            Post a job with a budget. Get quotes with ideas from applicants. Pick the best fit,
+            chat directly, and track progress — with mentors guiding the work end to end.
           </p>
-          <div className="flex justify-center gap-3">
-            <Link to="/signup?role=user" className="btn-primary">Create your account</Link>
-            <Link to="/login" className="btn-secondary">Sign in</Link>
-          </div>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 mt-16">
-          <Link to="/signup?role=user" className="card hover:shadow-md transition-shadow">
-            <Briefcase className="w-8 h-8 text-brand-600 mb-3" />
-            <h3 className="font-semibold text-lg mb-2">Post a project</h3>
+        <div className="grid md:grid-cols-3 gap-6 mt-12">
+          <Link to="/signup" className="card hover:shadow-md transition-shadow">
+            <div className="text-3xl mb-3">🏭</div>
+            <h3 className="font-semibold text-lg mb-2">Post a job</h3>
             <p className="text-gray-600 text-sm">
-              Describe your problem in plain language — it becomes a scoped brief with required skills, milestones and a review rubric.
+              Marketing campaigns, content, video editing, web design, software — post it with a
+              budget and compare quotes from applicants.
             </p>
           </Link>
-          <Link to="/signup?role=user" className="card hover:shadow-md transition-shadow">
-            <GraduationCap className="w-8 h-8 text-brand-600 mb-3" />
-            <h3 className="font-semibold text-lg mb-2">Work on projects</h3>
+          <Link to="/signup" className="card hover:shadow-md transition-shadow">
+            <div className="text-3xl mb-3">🎓</div>
+            <h3 className="font-semibold text-lg mb-2">Work on jobs</h3>
             <p className="text-gray-600 text-sm">
-              Add your resume, LinkedIn, GitHub and skills. Apply to open projects and build a verified track record.
+              Submit your quote and ideas, get hired, chat with the business, and build a public
+              profile of completed jobs and reviews.
             </p>
           </Link>
-          <Link to="/signup?role=mentor" className="card hover:shadow-md transition-shadow">
-            <Compass className="w-8 h-8 text-brand-600 mb-3" />
-            <h3 className="font-semibold text-lg mb-2">Mentor / admin</h3>
+          <div className="card">
+            <div className="text-3xl mb-3">🧭</div>
+            <h3 className="font-semibold text-lg mb-2">Mentors guide</h3>
             <p className="text-gray-600 text-sm">
-              Review submitted work against rubrics, verify skills and businesses, and assign mentors to projects.
+              Mentors pick live jobs to mentor, track progress, join the conversation, and help
+              students deliver quality work. (Mentor accounts are created by admins.)
             </p>
-          </Link>
+          </div>
         </div>
 
         <div className="mt-16 text-center">

@@ -4,7 +4,9 @@ dist/
 out/
 .env
 .env.local
+.dev.vars
+.wrangler/
+.open-next/
 *.log
 *.tsbuildinfo
 .DS_Store
-apps/api/.wrangler/

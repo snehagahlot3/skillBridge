@@ -1,11 +1,10 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type MeResponse, type Role, type User } from "../lib/api";
+import { api, type MeResponse, type User } from "../lib/api";
 
 interface SignupData {
   email: string;
   password: string;
   name: string;
-  role: Role;
   profile?: Record<string, unknown>;
 }
 

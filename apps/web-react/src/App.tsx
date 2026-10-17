@@ -6,9 +6,11 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
-import MentorAdmin from "./pages/MentorAdmin";
-import ProjectDetail from "./pages/ProjectDetail";
-import Passport from "./pages/Passport";
+import JobDetail from "./pages/JobDetail";
+import Chat from "./pages/Chat";
+import PublicProfile from "./pages/PublicProfile";
+import MentorDashboard from "./pages/MentorDashboard";
+import AdminDashboard from "./pages/AdminDashboard";
 
 function FullScreenLoader() {
   return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
@@ -19,7 +21,8 @@ function Protected({ roles, children }: { roles?: Role[]; children: ReactElement
   if (loading) return <FullScreenLoader />;
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !roles.includes(user.role)) {
-    return <Navigate to={user.role === "mentor" ? "/mentor" : "/dashboard"} replace />;
+    const home = user.role === "mentor" ? "/mentor" : user.role === "admin" ? "/admin" : "/dashboard";
+    return <Navigate to={home} replace />;
   }
   return children;
 }
@@ -42,19 +45,35 @@ export default function App() {
         path="/mentor"
         element={
           <Protected roles={["mentor"]}>
-            <MentorAdmin />
+            <MentorDashboard />
           </Protected>
         }
       />
       <Route
-        path="/projects/:id"
+        path="/admin"
         element={
-          <Protected>
-            <ProjectDetail />
+          <Protected roles={["admin"]}>
+            <AdminDashboard />
           </Protected>
         }
       />
-      <Route path="/passport/:slug" element={<Passport />} />
+      <Route
+        path="/jobs/:id"
+        element={
+          <Protected>
+            <JobDetail />
+          </Protected>
+        }
+      />
+      <Route
+        path="/chat/:jobId"
+        element={
+          <Protected>
+            <Chat />
+          </Protected>
+        }
+      />
+      <Route path="/users/:id" element={<PublicProfile />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

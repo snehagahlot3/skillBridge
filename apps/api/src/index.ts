@@ -4,13 +4,15 @@ import { createDb } from "./db";
 import type { AppEnv } from "./types";
 import { authRoutes } from "./routes/auth";
 import { profileRoutes } from "./routes/profile";
-import { projectRoutes } from "./routes/projects";
+import { jobRoutes } from "./routes/jobs";
 import { applicationRoutes } from "./routes/applications";
-import { submissionRoutes } from "./routes/submissions";
+import { milestoneRoutes } from "./routes/milestones";
 import { reviewRoutes } from "./routes/reviews";
-import { passportRoutes } from "./routes/passport";
-import { aiRoutes } from "./routes/ai";
+import { userRoutes } from "./routes/users";
+import { mentorRoutes } from "./routes/mentor";
 import { adminRoutes } from "./routes/admin";
+import { chatRoutes } from "./routes/chat";
+import { aiRoutes } from "./routes/ai";
 
 const app = new Hono<AppEnv>();
 
@@ -18,7 +20,7 @@ app.use(
   "*",
   cors({
     origin: (origin, c) => {
-      const allowed = [c.env.FRONTEND_URL, "http://localhost:3000"];
+      const allowed = [c.env.FRONTEND_URL, "http://localhost:3000", "http://localhost:5173"];
       return allowed.includes(origin) ? origin : allowed[0];
     },
     credentials: true,
@@ -32,13 +34,15 @@ app.use("*", async (c, next) => {
 
 app.route("/api/auth", authRoutes());
 app.route("/api/profile", profileRoutes());
-app.route("/api/projects", projectRoutes());
+app.route("/api/jobs", jobRoutes());
 app.route("/api/applications", applicationRoutes());
-app.route("/api/submissions", submissionRoutes());
+app.route("/api/milestones", milestoneRoutes());
 app.route("/api/reviews", reviewRoutes());
-app.route("/api/passport", passportRoutes());
-app.route("/api/ai", aiRoutes());
+app.route("/api/users", userRoutes());
+app.route("/api/mentor", mentorRoutes());
 app.route("/api/admin", adminRoutes());
+app.route("/api/chat", chatRoutes());
+app.route("/api/ai", aiRoutes());
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
@@ -48,3 +52,4 @@ app.onError((err, c) => {
 });
 
 export default app;
+export { ChatRoom } from "./durable/chat";

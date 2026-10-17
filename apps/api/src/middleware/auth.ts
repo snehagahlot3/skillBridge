@@ -18,6 +18,9 @@ export const authMiddleware = createMiddleware<AppEnv>(async (c, next) => {
     const sub = payload.sub as string;
     const [user] = await c.var.db.select().from(users).where(eq(users.id, sub));
     if (!user) return c.json({ error: "User not found" }, 401);
+    if (user.status === "blocked") {
+      return c.json({ error: "This account has been blocked. Contact support." }, 403);
+    }
 
     c.set("user", { id: user.id, email: user.email, name: user.name, role: user.role });
   } catch {
