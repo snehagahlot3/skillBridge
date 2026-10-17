@@ -99,14 +99,23 @@ $simpleJob = Call POST "/api/jobs" @{
 Assert "create simple job" ($simpleJob.status -eq 201)
 $simpleJobId = $simpleJob.json.id
 Assert "default Freelancer position" ($simpleJob.json.positions.Count -eq 1 -and $simpleJob.json.positions[0].title -eq "Freelancer" -and $simpleJob.json.positions[0].count -eq 1)
+
+$editJob = Call PATCH "/api/jobs/$simpleJobId" @{ title = "Test simple job: logo refresh (edited)"; budgetMax = 3500 } $rajeshToken
+Assert "owner edits job details" ($editJob.status -eq 200 -and $editJob.json.title -eq "Test simple job: logo refresh (edited)" -and $editJob.json.budgetMax -eq 3500)
+$editJobForbidden = Call PATCH "/api/jobs/$simpleJobId" @{ title = "hijack" } $priyaToken
+Assert "non-owner cannot edit job" ($editJobForbidden.status -eq 403)
+
 $null = Call PATCH "/api/jobs/$simpleJobId/publish" $null $rajeshToken
 $sq = Call POST "/api/applications/$simpleJobId/apply" @{ positionId = $simpleJob.json.positions[0].id; pitch = "I have refreshed logos for 5 local shops and can deliver this week."; quoteAmount = 2500 } $arjunToken
 Assert "quote on simple job" ($sq.status -eq 201)
 $sapps = Call GET "/api/applications/$simpleJobId/applications" $null $rajeshToken
 $saccept = Call POST "/api/applications/$($sapps.json.applications[0].id)/accept" $null $rajeshToken
-Assert "single hire completes team -> awarded" ($saccept.status -eq 200 -and $saccept.json.teamComplete -eq $true)
+Assert "single hire completes team -> auto-starts work" ($saccept.status -eq 200 -and $saccept.json.teamComplete -eq $true)
 $sdetail = Call GET "/api/jobs/$simpleJobId" $null $rajeshToken
-Assert "simple job awarded" ($sdetail.json.status -eq "awarded")
+Assert "simple job in_progress immediately" ($sdetail.json.status -eq "in_progress")
+
+$editLocked = Call PATCH "/api/jobs/$simpleJobId" @{ title = "too late" } $rajeshToken
+Assert "in-progress job details locked" ($editLocked.status -eq 400)
 
 Write-Host "`n=== 4. Quotes per position ==="
 $q1 = Call POST "/api/applications/$jobId/apply" @{ positionId = $newJob.json.positions[0].id; pitch = "I can lead the campaign and coordinate the marketing side of the team."; quoteAmount = 7000 } $priyaToken
@@ -119,6 +128,16 @@ $qBad = Call POST "/api/applications/$jobId/apply" @{ positionId = "nonexistent"
 Assert "bad position rejected" ($qBad.status -eq 400)
 $qDup = Call POST "/api/applications/$jobId/apply" @{ positionId = $newJob.json.positions[0].id; pitch = "Duplicate quote for the same position should fail."; quoteAmount = 8000 } $priyaToken
 Assert "duplicate position quote rejected" ($qDup.status -eq 409)
+
+$qApps = Call GET "/api/applications/$jobId/applications" $null $rajeshToken
+$priyaQuoteId = ($qApps.json.applications | Where-Object { $_.applicantId -eq $priya.json.user.id }).id
+$editQuote = Call PATCH "/api/applications/$priyaQuoteId" @{ pitch = "Updated pitch: I can also handle the analytics dashboard for the campaign."; quoteAmount = 7200 } $priyaToken
+Assert "applicant edits own quote" ($editQuote.status -eq 200 -and $editQuote.json.quoteAmount -eq 7200)
+$qApps2 = Call GET "/api/applications/$jobId/applications" $null $rajeshToken
+$priyaQuote2 = $qApps2.json.applications | Where-Object { $_.applicantId -eq $priya.json.user.id }
+Assert "edited quote visible to owner" ($priyaQuote2.quoteAmount -eq 7200 -and $priyaQuote2.pitch -like "*Updated pitch*")
+$editQuoteOthers = Call PATCH "/api/applications/$priyaQuoteId" @{ pitch = "Hijack attempt by another user should fail."; quoteAmount = 1 } $arjunToken
+Assert "other applicant cannot edit quote" ($editQuoteOthers.status -eq 403)
 
 Write-Host "`n=== 5. Hiring builds the team ==="
 $apps = Call GET "/api/applications/$jobId/applications" $null $rajeshToken
@@ -145,15 +164,15 @@ $overflow = Call POST "/api/applications/$jobId/apply" @{ positionId = $newJob.j
 Assert "full position blocks new quotes" ($overflow.status -eq 400)
 
 $h3 = Call POST "/api/applications/$($nehaApp.id)/accept" $null $rajeshToken
-Assert "hire neha -> team complete -> awarded" ($h3.status -eq 200 -and $h3.json.teamComplete -eq $true)
+Assert "hire neha -> team complete -> work starts" ($h3.status -eq 200 -and $h3.json.teamComplete -eq $true)
 
 $detail = Call GET "/api/jobs/$jobId" $null $rajeshToken
-Assert "status=awarded" ($detail.json.status -eq "awarded")
+Assert "status=in_progress (auto-start)" ($detail.json.status -eq "in_progress")
 Assert "team has 3 members" ($detail.json.team.Count -eq 3)
 $portal = Call GET "/api/jobs" $null $priyaToken
 Assert "awarded job delisted from portal" (-not ($portal.json | Where-Object { $_.id -eq $jobId }))
 
-Write-Host "`n=== 6. Mentor claim + free himself + re-claim ==="
+Write-Host "`n=== 6. Mentor + team work flow ==="
 $claim = Call POST "/api/mentor/jobs/$jobId/claim" $null $mentorToken
 Assert "mentor claims" ($claim.status -eq 200)
 $release = Call POST "/api/mentor/jobs/$jobId/release" $null $mentorToken
@@ -162,9 +181,6 @@ $queueAgain = Call GET "/api/mentor/queue" $null $mentorToken
 Assert "job back in mentor queue" ($queueAgain.json | Where-Object { $_.id -eq $jobId })
 $claim2 = Call POST "/api/mentor/jobs/$jobId/claim" $null $mentorToken
 Assert "mentor re-claims" ($claim2.status -eq 200)
-
-$start = Call POST "/api/jobs/$jobId/start" $null $arjunToken
-Assert "team member starts" ($start.status -eq 200)
 
 $detail = Call GET "/api/jobs/$jobId" $null $priyaToken
 $msId = $detail.json.milestones[0].id

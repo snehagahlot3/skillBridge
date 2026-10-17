@@ -66,7 +66,7 @@ INSERT INTO jobs (id, owner_id, title, description, category, required_skills, p
    'Design a reusable email newsletter template (Figma + HTML email) for our monthly offers.',
    'Design', '["Figma","Email Design"]',
    '[{"id":"pos-4a","title":"Email Designer","count":1}]',
-   3000, 4000, '2026-11-05', 'Editable template that renders well in Gmail and Outlook.', 'awarded', 'mentor-001'),
+   3000, 4000, '2026-11-05', 'Editable template that renders well in Gmail and Outlook.', 'in_progress', 'mentor-001'),
   ('job-005', 'user-002', '3D product renders for catalogue',
    'Render 8 fabric SKUs in 3D for our new catalogue (folds, drapes, textures).',
    '3D Design', '["Blender","Rendering"]',

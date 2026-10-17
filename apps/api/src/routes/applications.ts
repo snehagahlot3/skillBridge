@@ -21,6 +21,11 @@ const applySchema = z.object({
   quoteAmount: z.number().nonnegative(),
 });
 
+const quoteUpdateSchema = z.object({
+  pitch: z.string().min(10),
+  quoteAmount: z.number().nonnegative(),
+});
+
 function parsePositions(job: typeof jobs.$inferSelect): { id: string; title: string; count: number }[] {
   try {
     return JSON.parse(job.positions || "[]");
@@ -185,6 +190,53 @@ export function applicationRoutes() {
     return c.json({ applications: withApplicants, team });
   });
 
+  // Update my quote/pitch (applicant) while the job is still open
+  app.patch("/:applicationId", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { applicationId } = c.req.param();
+    const body = await c.req.json();
+    const parsed = quoteUpdateSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const [application] = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, applicationId));
+    if (!application) return c.json({ error: "Not found" }, 404);
+    if (application.applicantId !== user.id) return c.json({ error: "Forbidden" }, 403);
+    if (application.status !== "pending") {
+      return c.json({ error: "This application has already been decided" }, 400);
+    }
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, application.jobId));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.status !== "open") return c.json({ error: "Job is no longer open" }, 400);
+
+    const positions = parsePositions(job);
+    const position = positions.find((p) => p.id === application.positionId);
+    if (!position) return c.json({ error: "Position no longer exists" }, 400);
+
+    const hired = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.jobId, job.id), eq(teamMembers.positionId, position.id)));
+    if (hired.length >= position.count) {
+      return c.json({ error: "This position is already filled" }, 400);
+    }
+
+    await db
+      .update(applications)
+      .set({ pitch: parsed.data.pitch, quoteAmount: parsed.data.quoteAmount })
+      .where(eq(applications.id, applicationId));
+
+    const [updated] = await db
+      .select()
+      .from(applications)
+      .where(eq(applications.id, applicationId));
+    return c.json(updated);
+  });
+
   // Owner awards the job to an applicant for a position.
   // When every position is filled, the job automatically becomes "awarded"
   // (and therefore disappears from the open portal).
@@ -260,20 +312,20 @@ export function applicationRoutes() {
       }
     }
 
-    // All positions filled -> team complete -> awarded
+    // All positions filled -> team complete -> work starts immediately
     const fullTeam = await db.select().from(teamMembers).where(eq(teamMembers.jobId, job.id));
     const allFilled = positions.every(
       (p) => fullTeam.filter((t) => t.positionId === p.id).length >= p.count
     );
     if (allFilled) {
-      const result = await transitionJobStatus(db, job.id, "awarded", user.id);
+      const result = await transitionJobStatus(db, job.id, "in_progress", user.id);
       if (!result.ok) return c.json({ error: result.error }, 400);
       await db.insert(jobUpdates).values({
         id: crypto.randomUUID(),
         jobId: job.id,
         authorId: user.id,
         kind: "system",
-        content: "Team complete! The job has been awarded and the chat is open for everyone.",
+        content: "Team complete! Work started — the chat is open for everyone.",
       });
     }
 

@@ -408,6 +408,19 @@ class ApiClient {
     return this.fetch(`/jobs/${id}/publish`, { method: "PATCH" });
   }
 
+  updateJob(id: string, data: {
+    title?: string;
+    description?: string;
+    category?: string;
+    requiredSkills?: string[];
+    budgetMin?: number;
+    budgetMax?: number;
+    deadline?: string;
+    acceptanceCriteria?: string;
+  }): Promise<Job> {
+    return this.fetch(`/jobs/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+  }
+
   cancelJob(id: string) {
     return this.fetch(`/jobs/${id}/cancel`, { method: "PATCH" });
   }
@@ -449,6 +462,13 @@ class ApiClient {
     return this.fetch(`/applications/${jobId}/apply`, {
       method: "POST",
       body: JSON.stringify({ positionId, pitch, quoteAmount }),
+    });
+  }
+
+  updateApplication(applicationId: string, pitch: string, quoteAmount: number) {
+    return this.fetch(`/applications/${applicationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ pitch, quoteAmount }),
     });
   }
 

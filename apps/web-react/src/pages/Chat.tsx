@@ -93,8 +93,9 @@ export default function Chat() {
   }
 
   const meId = user?.id;
+  // The mentor-room toggle is only for mentors and students (team) — never owners.
   const canSeeMentorRoom =
-    job != null && (job.myRole === "mentor" || job.myRole === "team" || job.myRole === "admin");
+    job != null && (job.myRole === "mentor" || job.myRole === "team");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -125,24 +126,26 @@ export default function Chat() {
         {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
         <div className="card flex-1 flex flex-col min-h-[60vh] max-h-[70vh]">
-          {/* Room toggle */}
+          {/* Room toggle (mentors + students only) */}
           <div className="flex items-center justify-between border-b pb-3 mb-3">
-            <div className="inline-flex rounded-lg border border-gray-300 p-1 gap-1">
-              <button
-                onClick={() => setScope("group")}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "group" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
-              >
-                Group chat
-              </button>
-              {canSeeMentorRoom && (
+            {canSeeMentorRoom ? (
+              <div className="inline-flex rounded-lg border border-gray-300 p-1 gap-1">
+                <button
+                  onClick={() => setScope("group")}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "group" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  Group chat
+                </button>
                 <button
                   onClick={() => setScope("mentor")}
                   className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "mentor" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
                 >
                   Mentor + team
                 </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <span className="badge bg-green-100 text-green-800">Group chat</span>
+            )}
             <p className="text-xs text-gray-400">
               {scope === "mentor"
                 ? "Private — owner cannot see this room"

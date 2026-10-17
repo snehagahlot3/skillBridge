@@ -114,6 +114,17 @@ async function logUpdate(
   });
 }
 
+const editJobSchema = z.object({
+  title: z.string().min(3).optional(),
+  description: z.string().min(10).optional(),
+  category: z.string().min(1).optional(),
+  requiredSkills: z.array(z.string()).optional(),
+  budgetMin: z.number().nonnegative().optional(),
+  budgetMax: z.number().nonnegative().optional(),
+  deadline: z.string().optional(),
+  acceptanceCriteria: z.string().optional(),
+});
+
 export function jobRoutes() {
   const app = new Hono<AppEnv>();
   app.use("*", authMiddleware);
@@ -280,6 +291,32 @@ export function jobRoutes() {
       reviews: enrichedReviews,
       myRole: isOwner ? "owner" : onTeam ? "team" : isMentor ? "mentor" : isAdmin ? "admin" : null,
     });
+  });
+
+  // Edit job details (owner, while draft or open)
+  app.patch("/:id", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    const parsed = editJobSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Not found" }, 404);
+    if (job.ownerId !== user.id) return c.json({ error: "Forbidden" }, 403);
+    if (!["draft", "open"].includes(job.status)) {
+      return c.json({ error: "Details can only be edited while the job is a draft or open" }, 400);
+    }
+
+    const patch: Record<string, unknown> = { ...parsed.data };
+    if (parsed.data.requiredSkills) patch.requiredSkills = JSON.stringify(parsed.data.requiredSkills);
+
+    await db.update(jobs).set(patch).where(eq(jobs.id, id));
+    await logUpdate(db, id, user.id, "system", "Job details updated.");
+
+    const [updated] = await db.select().from(jobs).where(eq(jobs.id, id));
+    return c.json(await jobWithDetails(db, updated));
   });
 
   // Publish (owner)

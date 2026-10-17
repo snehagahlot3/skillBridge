@@ -16,7 +16,7 @@ export type JobStatus =
 
 const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   draft: ["open", "cancelled"],
-  open: ["awarded", "cancelled", "delisted"],
+  open: ["awarded", "in_progress", "cancelled", "delisted"],
   awarded: ["in_progress", "cancelled"],
   in_progress: ["delivered", "cancelled"],
   delivered: ["completed", "revision_requested", "disputed"],

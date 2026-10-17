@@ -178,7 +178,7 @@ export default function JobDetail() {
         )}
 
         {job.status === "open" && !isOwner && !isTeam && (
-          <QuoteBox job={job} team={team} onDone={() => load()} />
+          <ProposalBox job={job} meId={user?.id} onChanged={() => load()} />
         )}
 
         {(isOwner || isMentor) && (job.applications?.length ?? 0) > 0 && (
@@ -206,6 +206,92 @@ export default function JobDetail() {
           <ReviewsSection job={job} team={team} me={user} onChanged={load} onError={setToast} />
         )}
       </main>
+    </div>
+  );
+}
+
+function ProposalBox({ job, meId, onChanged }: { job: Job; meId?: string; onChanged: () => Promise<void> }) {
+  const myApps = (job.applications ?? []).filter((a) => a.applicantId === meId);
+  const team = job.team ?? [];
+  const [editing, setEditing] = useState<Application | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [pitch, setPitch] = useState("");
+  const [quote, setQuote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (myApps.length === 0) {
+    return <QuoteBox job={job} team={team} onDone={() => onChanged()} />;
+  }
+
+  function startEdit(app: Application) {
+    setEditing(app);
+    setPitch(app.pitch);
+    setQuote(app.quoteAmount != null ? String(app.quoteAmount) : "");
+    setError("");
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setBusy(true);
+    setError("");
+    try {
+      const amount = Number(quote);
+      if (!pitch.trim() || pitch.trim().length < 10) throw new Error("Tell the owner your plan in at least 10 characters.");
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter your quote amount in ₹.");
+      await api.updateApplication(editing.id, pitch.trim(), amount);
+      setEditing(null);
+      await onChanged();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 className="font-semibold text-lg mb-1">Proposal submitted</h3>
+      <p className="text-xs text-gray-500 mb-4">You can view or update it while the job is still open.</p>
+      <div className="space-y-3">
+        {myApps.map((a) => (
+          <div key={a.id} className="rounded-lg border border-gray-200 p-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{a.positionTitle || "Position"}</span>
+                <span className={`badge ${a.status === "pending" ? "badge-pending" : a.status === "accepted" ? "badge-verified" : "bg-gray-100 text-gray-500"}`}>{a.status}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="badge bg-brand-50 text-brand-700 font-semibold">₹{a.quoteAmount?.toLocaleString("en-IN")}</span>
+                <button className="btn-secondary text-xs py-1.5" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+                  {expanded === a.id ? "Hide" : "View proposal"}
+                </button>
+                {a.status === "pending" && (
+                  <button className="btn-primary text-xs py-1.5" onClick={() => startEdit(a)}>Edit</button>
+                )}
+              </div>
+            </div>
+            {expanded === a.id && <p className="text-sm text-gray-600 mt-2">{a.pitch}</p>}
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <Modal title={`Edit proposal — ${editing.positionTitle || "Position"}`} onClose={() => setEditing(null)}>
+          {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Your quote (₹)</label>
+              <input type="number" min="0" className="input" value={quote} onChange={(e) => setQuote(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Your brief / ideas for the job</label>
+              <textarea className="input" rows={4} value={pitch} onChange={(e) => setPitch(e.target.value)} />
+            </div>
+            <button className="btn-primary" disabled={busy} onClick={saveEdit}>{busy ? "Saving..." : "Save changes"}</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -369,7 +455,7 @@ function QuotesSection({ job, team, onChanged, onError }: {
 
 function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn: () => Promise<unknown>, success?: string) => Promise<void> }) {
   const role = job.myRole;
-  const [modal, setModal] = useState<"deliver" | "revision" | "dispute" | "milestones" | null>(null);
+  const [modal, setModal] = useState<"deliver" | "revision" | "dispute" | "milestones" | "edit" | null>(null);
   const [content, setContent] = useState("");
   const [milestoneTitles, setMilestoneTitles] = useState("");
 
@@ -388,9 +474,9 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
             Cancel job
           </button>
         )}
-        {["owner", "team"].includes(role) && job.status === "awarded" && (
-          <button className="btn-primary" disabled={busy} onClick={() => onAct(() => api.startJob(job.id), "Work started.")}>
-            Start work
+        {role === "owner" && ["draft", "open"].includes(job.status) && (
+          <button className="btn-secondary" disabled={busy} onClick={() => setModal("edit")}>
+            Edit details
           </button>
         )}
         {role === "team" && job.status === "in_progress" && (
@@ -420,7 +506,7 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
         )}
       </div>
 
-      {modal && (
+      {modal && modal !== "edit" && (
         <Modal title={modal === "deliver" ? "Deliver final work" : modal === "revision" ? "Request revision" : modal === "dispute" ? "Raise dispute" : "Add milestones"} onClose={() => setModal(null)}>
           {modal === "milestones" ? (
             <div className="space-y-4">
@@ -468,7 +554,98 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
           )}
         </Modal>
       )}
+
+      {modal === "edit" && (
+        <EditJobModal job={job} onClose={() => setModal(null)} onSaved={async () => { setModal(null); await onAct(async () => {}, undefined); }} />
+      )}
     </div>
+  );
+}
+
+function EditJobModal({ job, onClose, onSaved }: { job: Job; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [form, setForm] = useState({
+    title: job.title,
+    description: job.description,
+    category: job.category,
+    requiredSkills: job.requiredSkills.join(", "),
+    budgetMin: job.budgetMin != null ? String(job.budgetMin) : "",
+    budgetMax: job.budgetMax != null ? String(job.budgetMax) : "",
+    deadline: job.deadline || "",
+    acceptanceCriteria: job.acceptanceCriteria || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.updateJob(job.id, {
+        title: form.title,
+        description: form.description,
+        category: form.category,
+        requiredSkills: form.requiredSkills.split(",").map((s) => s.trim()).filter(Boolean),
+        budgetMin: form.budgetMin ? Number(form.budgetMin) : undefined,
+        budgetMax: form.budgetMax ? Number(form.budgetMax) : undefined,
+        deadline: form.deadline || undefined,
+        acceptanceCriteria: form.acceptanceCriteria || undefined,
+      });
+      await onSaved();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Edit job details" onClose={onClose} wide>
+      {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">Title</label>
+            <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Category</label>
+            <input className="input" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Description</label>
+          <textarea className="input" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        </div>
+        <div>
+          <label className="label">Required skills (comma-separated)</label>
+          <input className="input" value={form.requiredSkills} onChange={(e) => setForm({ ...form, requiredSkills: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="label">Budget min (₹)</label>
+            <input type="number" min="0" className="input" value={form.budgetMin} onChange={(e) => setForm({ ...form, budgetMin: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Budget max (₹)</label>
+            <input type="number" min="0" className="input" value={form.budgetMax} onChange={(e) => setForm({ ...form, budgetMax: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Deadline</label>
+            <input type="date" className="input" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+          </div>
+        </div>
+        <div>
+          <label className="label">Acceptance criteria</label>
+          <textarea className="input" rows={2} value={form.acceptanceCriteria} onChange={(e) => setForm({ ...form, acceptanceCriteria: e.target.value })} />
+        </div>
+        <div className="flex gap-2">
+          <button className="btn-primary" disabled={busy || !form.title || !form.description || !form.category} onClick={save}>
+            {busy ? "Saving..." : "Save changes"}
+          </button>
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
