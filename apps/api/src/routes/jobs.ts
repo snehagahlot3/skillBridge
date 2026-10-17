@@ -23,7 +23,7 @@ const createJobSchema = z.object({
   requiredSkills: z.array(z.string()).default([]),
   positions: z
     .array(z.object({ title: z.string().min(1), count: z.number().int().min(1).max(20) }))
-    .default([]),
+    .optional(),
   budgetMin: z.number().nonnegative().optional(),
   budgetMax: z.number().nonnegative().optional(),
   deadline: z.string().optional(),
@@ -127,7 +127,12 @@ export function jobRoutes() {
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
     const id = crypto.randomUUID();
-    const positions = parsed.data.positions.map((p) => ({
+    // Positions are optional: a job posted without positions is a simple
+    // single-freelancer job — owner picks ONE applicant.
+    const rawPositions = parsed.data.positions?.length
+      ? parsed.data.positions
+      : [{ title: "Freelancer", count: 1 }];
+    const positions = rawPositions.map((p) => ({
       id: crypto.randomUUID(),
       title: p.title,
       count: p.count,

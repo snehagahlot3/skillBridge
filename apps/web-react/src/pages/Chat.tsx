@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Send } from "lucide-react";
 import { api, type ChatMessage, type Job } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, StatusBadge } from "../components/ui";
 
+type Scope = "group" | "mentor";
+
 export default function Chat() {
   const { jobId } = useParams();
+  const [params] = useSearchParams();
+  const [scope, setScope] = useState<Scope>(params.get("scope") === "mentor" ? "mentor" : "group");
   const navigate = useNavigate();
   const { user } = useAuth();
   const [job, setJob] = useState<Job | null>(null);
@@ -22,18 +26,20 @@ export default function Chat() {
     if (!id) return;
     let cancelled = false;
 
-    async function init(roomId: string) {
+    async function init(roomId: string, roomScope: Scope) {
+      setStatus("connecting");
+      setMessages([]);
       try {
         const [jobData, history] = await Promise.all([
           api.getJob(roomId),
-          api.getMessages(roomId),
+          api.getMessages(roomId, roomScope),
         ]);
         if (cancelled) return;
         setJob(jobData);
         setMessages(history.messages);
-        await api.markRead(roomId);
+        await api.markRead(roomId, roomScope);
 
-        const ws = new WebSocket(api.chatSocketUrl(roomId));
+        const ws = new WebSocket(api.chatSocketUrl(roomId, roomScope));
         socketRef.current = ws;
         ws.onopen = () => setStatus("open");
         ws.onclose = () => setStatus("closed");
@@ -43,7 +49,7 @@ export default function Chat() {
             const data = JSON.parse(ev.data as string);
             if (data.type === "message" && data.message) {
               setMessages((prev) => [...prev.filter((m) => m.id !== data.message.id), data.message]);
-              api.markRead(roomId).catch(() => {});
+              api.markRead(roomId, roomScope).catch(() => {});
             }
           } catch {
             // ignore
@@ -54,7 +60,7 @@ export default function Chat() {
       }
     }
 
-    init(id);
+    init(id, scope);
 
     return () => {
       cancelled = true;
@@ -62,7 +68,7 @@ export default function Chat() {
       socketRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
+  }, [jobId, scope]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -78,7 +84,7 @@ export default function Chat() {
     } else {
       // REST fallback
       try {
-        const res = await api.sendMessage(jobId, content);
+        const res = await api.sendMessage(jobId, content, scope);
         setMessages((prev) => [...prev.filter((m) => m.id !== res.message.id), res.message]);
       } catch (err) {
         setError((err as Error).message);
@@ -87,6 +93,8 @@ export default function Chat() {
   }
 
   const meId = user?.id;
+  const canSeeMentorRoom =
+    job != null && (job.myRole === "mentor" || job.myRole === "team" || job.myRole === "admin");
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -117,12 +125,37 @@ export default function Chat() {
         {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
         <div className="card flex-1 flex flex-col min-h-[60vh] max-h-[70vh]">
+          {/* Room toggle */}
+          <div className="flex items-center justify-between border-b pb-3 mb-3">
+            <div className="inline-flex rounded-lg border border-gray-300 p-1 gap-1">
+              <button
+                onClick={() => setScope("group")}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "group" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+              >
+                Group chat
+              </button>
+              {canSeeMentorRoom && (
+                <button
+                  onClick={() => setScope("mentor")}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "mentor" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                >
+                  Mentor + team
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-400">
+              {scope === "mentor"
+                ? "Private — owner cannot see this room"
+                : "Owner + team + mentor all see this room"}
+            </p>
+          </div>
+
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
             {messages.length === 0 && (
               <p className="text-sm text-gray-500 text-center py-8">
-                No messages yet. This is a group chat: the business owner
-                {job?.team && job.team.length > 0 ? ", the hired team" : ""}
-                {job?.mentorId ? " and the assigned mentor" : ""} all see these messages.
+                {scope === "mentor"
+                  ? "No messages yet. This is the private room between the mentor and the hired team."
+                  : `No messages yet. The business owner${job?.team && job.team.length > 0 ? ", the hired team" : ""}${job?.mentorId ? " and the assigned mentor" : ""} all see these messages.`}
               </p>
             )}
             {messages.map((m) => {
@@ -149,7 +182,7 @@ export default function Chat() {
           <div className="border-t pt-3 mt-3 flex gap-2">
             <input
               className="input"
-              placeholder="Type a message..."
+              placeholder={scope === "mentor" ? "Message the mentor + team privately..." : "Type a message..."}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {

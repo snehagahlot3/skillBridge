@@ -253,7 +253,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
         description: form.description,
         category: form.category,
         requiredSkills: form.requiredSkills.split(",").map((s) => s.trim()).filter(Boolean),
-        positions,
+        positions: positions.length ? positions : undefined,
         budgetMin: form.budgetMin ? Number(form.budgetMin) : undefined,
         budgetMax: form.budgetMax ? Number(form.budgetMax) : undefined,
         deadline: form.deadline || undefined,
@@ -322,7 +322,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
             <input className="input" value={form.requiredSkills} onChange={(e) => setForm({ ...form, requiredSkills: e.target.value })} />
           </div>
           <div className="mt-4">
-            <label className="label">Team positions (one per line: "Title x3", e.g. Marketing x3, Graphic Designer x1)</label>
+            <label className="label">Team positions (optional — leave empty to hire a single freelancer)</label>
             <textarea className="input" rows={3} placeholder={"Marketing x3\nGraphic Designer x1\nContent Creator x1"}
               value={form.positions} onChange={(e) => setForm({ ...form, positions: e.target.value })} />
           </div>
@@ -338,7 +338,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
         </section>
 
         <div className="flex gap-2">
-          <button onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category || !form.positions.trim()}>
+          <button onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
             {busy ? "Saving..." : "Save as draft"}
           </button>
           <button onClick={onDone} className="btn-ghost">Cancel</button>
@@ -396,25 +396,37 @@ function MyWork({ items }: { items: MyApplication[] }) {
 }
 
 function Messages({ rooms, onOpened }: { rooms: ChatRoomSummary[]; onOpened: () => void }) {
+  // merge group + mentor rooms into one entry per job; toggle switches inside the chat page
+  const byJob = new Map<string, { room: ChatRoomSummary; unread: number; hasMentor: boolean }>();
+  for (const room of rooms) {
+    const existing = byJob.get(room.jobId);
+    if (existing) {
+      existing.unread += room.unread;
+      existing.hasMentor = existing.hasMentor || room.scope === "mentor";
+    } else {
+      byJob.set(room.jobId, { room, unread: room.unread, hasMentor: room.scope === "mentor" });
+    }
+  }
+  const merged = [...byJob.values()];
+
   return (
     <>
       <h2 className="text-2xl font-bold mb-4">Messages</h2>
       <div className="grid gap-3">
-        {rooms.map((room) => (
+        {merged.map(({ room, unread, hasMentor }) => (
           <Link key={room.jobId} to={`/chat/${room.jobId}`} onClick={onOpened} className="card flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
               <p className="font-semibold">{room.title}</p>
               <p className="text-sm text-gray-500">
-                Group chat
-                {room.teamNames.length > 0 && <> · team: {room.teamNames.join(", ")}</>}
-                {room.mentorName && <> · mentor: {room.mentorName}</>}
+                {hasMentor && <span className="badge bg-brand-50 text-brand-700 mr-1">mentor room</span>}
+                team: {room.teamNames.join(", ") || "—"}{room.mentorName ? ` · mentor: ${room.mentorName}` : ""}
                 {" "}· <StatusBadge status={room.status} />
               </p>
             </div>
-            {room.unread > 0 && <span className="rounded-full bg-brand-600 text-white text-xs font-semibold px-2 py-1">{room.unread} new</span>}
+            {unread > 0 && <span className="rounded-full bg-brand-600 text-white text-xs font-semibold px-2 py-1">{unread} new</span>}
           </Link>
         ))}
-        {rooms.length === 0 && <div className="card text-center text-gray-500">No conversations yet. Chat opens once a job is awarded.</div>}
+        {merged.length === 0 && <div className="card text-center text-gray-500">No conversations yet. Chat opens once a job is awarded.</div>}
       </div>
     </>
   );

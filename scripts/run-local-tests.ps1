@@ -21,6 +21,16 @@ try {
   }
 } catch { }
 
+# Reset local D1 to a clean seeded state
+Write-Log "resetting local D1..."
+Remove-Item -Recurse -Force (Join-Path $ApiDir ".wrangler\state\v3\d1") -ErrorAction SilentlyContinue
+& (Join-Path $env:LOCALAPPDATA "Programs\MinGit\cmd\sh.exe") -c "exit 0" 2>$null
+Push-Location $ApiDir
+wrangler.cmd d1 migrations apply skillbridge --local 2>&1 | Out-Null
+wrangler.cmd d1 execute skillbridge --local --file=./seed.sql 2>&1 | Out-Null
+Pop-Location
+Write-Log "local D1 migrated + seeded"
+
 # Start API detached
 Write-Log "starting wrangler dev..."
 $proc = Start-Process -FilePath "wrangler.cmd" -ArgumentList "dev", "--port", "$Port" -WorkingDirectory $ApiDir -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $env:TEMP "wrangler-dev.log") -RedirectStandardError (Join-Path $env:TEMP "wrangler-dev-err.log")

@@ -48,6 +48,19 @@ export default function MentorDashboard() {
     }
   }
 
+  async function release(jobId: string) {
+    setBusy(true);
+    try {
+      await api.releaseJob(jobId);
+      setToast("You stepped down as mentor. The job is back in the queue.");
+      await loadAll();
+    } catch (err) {
+      setToast((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openJob(jobId: string) {
     try {
       const data = await api.getMentorJob(jobId);
@@ -125,8 +138,10 @@ export default function MentorDashboard() {
                   </div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Link to={`/chat/${job.id}`} className="btn-secondary"><MessageCircle className="w-4 h-4 mr-1" /> Chat</Link>
+                  <Link to={`/chat/${job.id}`} className="btn-secondary"><MessageCircle className="w-4 h-4 mr-1" /> Group</Link>
+                  <Link to={`/chat/${job.id}?scope=mentor`} className="btn-secondary"><MessageCircle className="w-4 h-4 mr-1" /> Student chat</Link>
                   <button onClick={() => openJob(job.id)} className="btn-primary">Progress</button>
+                  <button onClick={() => release(job.id)} className="btn-ghost" disabled={busy}>Free myself</button>
                 </div>
               </div>
             ))}

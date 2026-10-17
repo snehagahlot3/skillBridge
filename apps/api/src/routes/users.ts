@@ -69,6 +69,7 @@ export function userRoutes() {
       user: { id: user.id, name: user.name, role: user.role, createdAt: user.createdAt },
       profile: profile
         ? {
+            phone: profile.phone,
             city: profile.city,
             college: profile.college,
             bio: profile.bio,
@@ -77,6 +78,7 @@ export function userRoutes() {
             github: profile.github,
             portfolio: profile.portfolio,
             resumeKey: profile.resumeKey,
+            resumeName: profile.resumeName,
           }
         : null,
       business: business

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Github, Globe, Linkedin } from "lucide-react";
+import { FileText, Github, Globe, Linkedin } from "lucide-react";
 import { api, budgetLabel, type PublicUser } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
 import { Stars, StatusBadge } from "../components/ui";
 
 export default function PublicProfile() {
   const { id } = useParams();
+  const { user: viewer } = useAuth();
   const [data, setData] = useState<PublicUser | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -42,7 +44,7 @@ export default function PublicProfile() {
                 {isMentor && <span className="badge bg-brand-50 text-brand-700">Mentor</span>}
                 {business?.verificationStatus === "verified" && <span className="badge-verified">Verified business</span>}
               </div>
-              {profile?.college && <p className="text-gray-600 mt-1">{profile.college}{profile.city ? ` · ${profile.city}` : ""}</p>}
+              {profile?.college && <p className="text-gray-600 mt-1">{profile.college}{profile.city ? ` · ${profile.city}` : ""}{profile.phone ? ` · ${profile.phone}` : ""}</p>}
               {mentor?.organization && <p className="text-gray-600 mt-1">{mentor.organization}</p>}
               {profile?.bio && <p className="text-gray-600 mt-2">{profile.bio}</p>}
               {mentor?.bio && !profile?.bio && <p className="text-gray-600 mt-2">{mentor.bio}</p>}
@@ -90,6 +92,16 @@ export default function PublicProfile() {
             {profile?.linkedin && <a href={profile.linkedin} target="_blank" rel="noreferrer" className="text-brand-600 inline-flex items-center gap-1 text-sm"><Linkedin className="w-4 h-4" /> LinkedIn</a>}
             {profile?.github && <a href={profile.github} target="_blank" rel="noreferrer" className="text-gray-700 inline-flex items-center gap-1 text-sm"><Github className="w-4 h-4" /> GitHub</a>}
             {profile?.portfolio && <a href={profile.portfolio} target="_blank" rel="noreferrer" className="text-gray-700 inline-flex items-center gap-1 text-sm"><Globe className="w-4 h-4" /> Portfolio</a>}
+            {profile?.resumeKey && viewer && (
+              <button onClick={() => api.downloadResume(user.id)} className="text-brand-600 inline-flex items-center gap-1 text-sm hover:underline">
+                <FileText className="w-4 h-4" /> Resume{profile.resumeName ? ` (${profile.resumeName})` : ""}
+              </button>
+            )}
+            {profile?.resumeKey && !viewer && (
+              <span className="text-gray-400 text-sm inline-flex items-center gap-1">
+                <FileText className="w-4 h-4" /> Resume available — sign in to view
+              </span>
+            )}
           </div>
 
           {business && (

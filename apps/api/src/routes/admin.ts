@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import {
   users,
   profiles,
@@ -9,6 +9,8 @@ import {
   jobs,
   reviews,
   teamMembers,
+  applications,
+  jobUpdates,
   auditLog,
 } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
@@ -23,6 +25,15 @@ const createMentorSchema = z.object({
   expertise: z.array(z.string()).default([]),
   organization: z.string().optional(),
   bio: z.string().optional(),
+});
+
+const createBusinessSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8),
+  businessName: z.string().min(1),
+  sector: z.string().optional(),
+  city: z.string().optional(),
 });
 
 export function adminRoutes() {
@@ -245,6 +256,12 @@ export function adminRoutes() {
           ? await db.select().from(users).where(eq(users.id, j.mentorId))
           : [undefined];
         const team = await db.select().from(teamMembers).where(eq(teamMembers.jobId, j.id));
+        const teamList = await Promise.all(
+          team.map(async (t) => {
+            const [u] = await db.select().from(users).where(eq(users.id, t.userId));
+            return { userId: t.userId, name: u?.name || "Unknown", positionTitle: t.positionTitle };
+          })
+        );
         return {
           ...j,
           requiredSkills: JSON.parse(j.requiredSkills || "[]"),
@@ -252,6 +269,7 @@ export function adminRoutes() {
           owner: owner ? { id: owner.id, name: owner.name } : null,
           mentor: mentor ? { id: mentor.id, name: mentor.name } : null,
           teamSize: team.length,
+          team: teamList,
         };
       })
     );
@@ -297,6 +315,209 @@ export function adminRoutes() {
       action: "job_relisted",
       entity: "job",
       entityId: id,
+    });
+    return c.json({ ok: true });
+  });
+
+  // Reassign a job's mentor (admin)
+  app.patch("/jobs/:id/mentor", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const { id } = c.req.param();
+    const body = (await c.req.json()) as { mentorId?: string | null };
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+
+    let mentorId: string | null = body.mentorId ?? null;
+    if (mentorId) {
+      const [mentor] = await db.select().from(users).where(eq(users.id, mentorId));
+      if (!mentor || mentor.role !== "mentor" || mentor.status !== "active") {
+        return c.json({ error: "Invalid mentor" }, 400);
+      }
+    }
+
+    await db.update(jobs).set({ mentorId }).where(eq(jobs.id, id));
+    await db.insert(jobUpdates).values({
+      id: crypto.randomUUID(),
+      jobId: id,
+      authorId: actor.id,
+      kind: "system",
+      content: mentorId ? `Mentor reassigned by admin.` : `Mentor removed by admin.`,
+    });
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "mentor_reassigned",
+      entity: "job",
+      entityId: id,
+      details: JSON.stringify({ mentorId }),
+    });
+    return c.json({ ok: true });
+  });
+
+  // Remove a hired team member and, if the team is no longer complete,
+  // put the job back on the public listings (admin).
+  app.post("/jobs/:id/remove-member", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const { id } = c.req.param();
+    const body = (await c.req.json()) as { userId?: string };
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (!body.userId) return c.json({ error: "userId is required" }, 400);
+
+    const [member] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.jobId, id), eq(teamMembers.userId, body.userId)));
+    if (!member) return c.json({ error: "User is not on this job's team" }, 404);
+
+    await db.delete(teamMembers).where(eq(teamMembers.id, member.id));
+    await db
+      .update(applications)
+      .set({ status: "rejected" })
+      .where(and(eq(applications.jobId, id), eq(applications.applicantId, body.userId)));
+
+    const [removed] = await db.select().from(users).where(eq(users.id, body.userId));
+
+    // If the job was allocated and the team is now incomplete, reopen it.
+    const allocated = ["awarded", "in_progress", "delivered", "revision_requested", "disputed"];
+    if (allocated.includes(job.status)) {
+      await db.update(jobs).set({ status: "open" }).where(eq(jobs.id, id));
+      await db.insert(jobUpdates).values({
+        id: crypto.randomUUID(),
+        jobId: id,
+        authorId: actor.id,
+        kind: "system",
+        content: `${removed?.name || "A team member"} was removed by admin. Job returned to public listings.`,
+      });
+    } else {
+      await db.insert(jobUpdates).values({
+        id: crypto.randomUUID(),
+        jobId: id,
+        authorId: actor.id,
+        kind: "system",
+        content: `${removed?.name || "A team member"} was removed by admin.`,
+      });
+    }
+
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "team_member_removed",
+      entity: "job",
+      entityId: id,
+      details: JSON.stringify({ userId: body.userId, reopened: allocated.includes(job.status) }),
+    });
+
+    return c.json({ ok: true });
+  });
+
+  // Create a business owner account (user + business profile)
+  app.post("/businesses", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const body = await c.req.json();
+    const parsed = createBusinessSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const [existing] = await db.select().from(users).where(eq(users.email, parsed.data.email));
+    if (existing) return c.json({ error: "Email already registered" }, 409);
+
+    const id = crypto.randomUUID();
+    const passwordHash = await hashPassword(parsed.data.password);
+    await db.insert(users).values({
+      id,
+      email: parsed.data.email,
+      passwordHash,
+      name: parsed.data.name,
+      role: "user",
+    });
+    await db.insert(profiles).values({
+      userId: id,
+      city: parsed.data.city,
+      publicSlug: `${parsed.data.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${id.slice(0, 4)}`,
+    });
+    await db.insert(businessProfiles).values({
+      userId: id,
+      businessName: parsed.data.businessName,
+      sector: parsed.data.sector,
+      city: parsed.data.city,
+    });
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "business_owner_created",
+      entity: "user",
+      entityId: id,
+      details: JSON.stringify({ email: parsed.data.email }),
+    });
+
+    return c.json({ ok: true, id }, 201);
+  });
+
+  // Hard-remove a mentor (admin): clears jobs they mentor, deletes account
+  app.delete("/mentors/:userId", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const { userId } = c.req.param();
+
+    const [mentor] = await db.select().from(users).where(eq(users.id, userId));
+    if (!mentor || mentor.role !== "mentor") return c.json({ error: "Mentor not found" }, 404);
+
+    await db.update(jobs).set({ mentorId: null }).where(eq(jobs.mentorId, userId));
+    await db.delete(mentorProfiles).where(eq(mentorProfiles.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "mentor_removed",
+      entity: "user",
+      entityId: userId,
+      details: JSON.stringify({ email: mentor.email }),
+    });
+    return c.json({ ok: true });
+  });
+
+  // Hard-remove a business owner / user (admin): cleans team/applications,
+  // cancels their owned jobs, deletes account
+  app.delete("/users/:userId", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const { userId } = c.req.param();
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user || user.role !== "user") return c.json({ error: "User not found" }, 404);
+
+    // Cancel jobs they own
+    const owned = await db.select().from(jobs).where(eq(jobs.ownerId, userId));
+    for (const j of owned) {
+      await db
+        .update(jobs)
+        .set({ status: "cancelled" })
+        .where(eq(jobs.id, j.id));
+      await db.insert(jobUpdates).values({
+        id: crypto.randomUUID(),
+        jobId: j.id,
+        authorId: actor.id,
+        kind: "system",
+        content: `Job cancelled by admin (owner removed).`,
+      });
+    }
+    await db.delete(teamMembers).where(eq(teamMembers.userId, userId));
+    await db.delete(applications).where(eq(applications.applicantId, userId));
+    await db.delete(businessProfiles).where(eq(businessProfiles.userId, userId));
+    await db.delete(profiles).where(eq(profiles.userId, userId));
+    await db.delete(users).where(eq(users.id, userId));
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "user_removed",
+      entity: "user",
+      entityId: userId,
+      details: JSON.stringify({ email: user.email }),
     });
     return c.json({ ok: true });
   });

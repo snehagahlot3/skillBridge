@@ -191,6 +191,7 @@ export interface PublicJobCard {
 export interface PublicUser {
   user: { id: string; name: string; role: Role; createdAt: string };
   profile: {
+    phone: string | null;
     city: string | null;
     college: string | null;
     bio: string | null;
@@ -199,6 +200,7 @@ export interface PublicUser {
     github: string | null;
     portfolio: string | null;
     resumeKey: string | null;
+    resumeName: string | null;
   } | null;
   business: {
     businessName: string;
@@ -227,6 +229,7 @@ export interface ChatRoomSummary {
   jobId: string;
   title: string;
   status: JobStatus;
+  scope: "group" | "mentor";
   teamNames: string[];
   mentorName: string | null;
   unread: number;
@@ -296,6 +299,7 @@ export interface AdminJobRow extends Omit<Job, "owner" | "mentor" | "team"> {
   owner: { id: string; name: string } | null;
   mentor: { id: string; name: string } | null;
   teamSize: number;
+  team: { userId: string; name: string; positionTitle: string }[];
 }
 
 class ApiClient {
@@ -490,25 +494,25 @@ class ApiClient {
     return this.fetch(`/users/${userId}`);
   }
 
-  // ---- chat ----
+  // ---- chat (scope: "group" = owner+team+mentor, "mentor" = private mentor<->team) ----
   getChatRooms(): Promise<ChatRoomSummary[]> {
     return this.fetch("/chat/rooms");
   }
 
-  getMessages(jobId: string): Promise<{ messages: ChatMessage[] }> {
-    return this.fetch(`/chat/${jobId}/messages`);
+  getMessages(jobId: string, scope: "group" | "mentor" = "group"): Promise<{ messages: ChatMessage[] }> {
+    return this.fetch(`/chat/${jobId}/messages?scope=${scope}`);
   }
 
-  sendMessage(jobId: string, text: string): Promise<{ message: ChatMessage }> {
-    return this.fetch(`/chat/${jobId}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+  sendMessage(jobId: string, text: string, scope: "group" | "mentor" = "group"): Promise<{ message: ChatMessage }> {
+    return this.fetch(`/chat/${jobId}/messages?scope=${scope}`, { method: "POST", body: JSON.stringify({ text }) });
   }
 
-  markRead(jobId: string) {
-    return this.fetch(`/chat/${jobId}/read`, { method: "POST" });
+  markRead(jobId: string, scope: "group" | "mentor" = "group") {
+    return this.fetch(`/chat/${jobId}/read?scope=${scope}`, { method: "POST" });
   }
 
-  chatSocketUrl(jobId: string): string {
-    return `${WS_BASE}/api/chat/ws/${jobId}?token=${this.token ?? ""}`;
+  chatSocketUrl(jobId: string, scope: "group" | "mentor" = "group"): string {
+    return `${WS_BASE}/api/chat/ws/${jobId}?scope=${scope}&token=${this.token ?? ""}`;
   }
 
   // ---- mentor ----
@@ -526,6 +530,10 @@ class ApiClient {
 
   getMentorJob(id: string): Promise<MentorJob & { milestones: Milestone[]; updates: JobUpdate[]; applications: Application[] }> {
     return this.fetch(`/mentor/jobs/${id}`);
+  }
+
+  releaseJob(id: string) {
+    return this.fetch(`/mentor/jobs/${id}/release`, { method: "POST" });
   }
 
   // ---- admin ----
@@ -569,6 +577,18 @@ class ApiClient {
     return this.fetch(`/admin/businesses/${userId}/verify`, { method: "PATCH" });
   }
 
+  adminCreateBusinessOwner(data: { name: string; email: string; password: string; businessName: string; sector?: string; city?: string }) {
+    return this.fetch("/admin/businesses", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  adminDeleteMentor(userId: string) {
+    return this.fetch(`/admin/mentors/${userId}`, { method: "DELETE" });
+  }
+
+  adminDeleteUser(userId: string) {
+    return this.fetch(`/admin/users/${userId}`, { method: "DELETE" });
+  }
+
   adminGetJobs(): Promise<AdminJobRow[]> {
     return this.fetch("/admin/jobs");
   }
@@ -579,6 +599,14 @@ class ApiClient {
 
   adminRelistJob(id: string) {
     return this.fetch(`/admin/jobs/${id}/relist`, { method: "PATCH" });
+  }
+
+  adminAssignMentor(id: string, mentorId: string | null) {
+    return this.fetch(`/admin/jobs/${id}/mentor`, { method: "PATCH", body: JSON.stringify({ mentorId }) });
+  }
+
+  adminRemoveMember(id: string, userId: string) {
+    return this.fetch(`/admin/jobs/${id}/remove-member`, { method: "POST", body: JSON.stringify({ userId }) });
   }
 
   // ---- ai ----

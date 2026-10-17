@@ -69,7 +69,7 @@ export default function AdminDashboard() {
     { id: "overview", label: "Overview" },
     { id: "users", label: `Users (${users.length})` },
     { id: "mentors", label: `Mentors (${mentors.length})` },
-    { id: "businesses", label: `Businesses (${businesses.length})` },
+    { id: "businesses", label: `Business owners (${businesses.length})` },
     { id: "jobs", label: `Jobs (${jobs.length})` },
   ];
 
@@ -121,6 +121,14 @@ export default function AdminDashboard() {
                       Unblock
                     </button>
                   )}
+                  <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+                    onClick={() => {
+                      if (window.confirm(`Remove ${u.name}? Their account, applications and team memberships will be deleted and their jobs cancelled.`)) {
+                        run(() => api.adminDeleteUser(u.id), "User removed.");
+                      }
+                    }}>
+                    Remove
+                  </button>
                 </div>
               </div>
             ))}
@@ -130,51 +138,11 @@ export default function AdminDashboard() {
         {tab === "mentors" && <MentorsTab mentors={mentors} busy={busy} run={run} />}
 
         {tab === "businesses" && (
-          <div className="grid gap-3">
-            {businesses.map((b) => (
-              <div key={b.userId} className="card flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="font-medium">{b.businessName} <span className="text-gray-500 text-sm">({b.name})</span></p>
-                  <p className="text-sm text-gray-500">{b.city} · {b.sector}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={b.verificationStatus === "verified" ? "badge-verified" : "badge-pending"}>{b.verificationStatus}</span>
-                  {b.verificationStatus !== "verified" && (
-                    <button className="btn-primary" disabled={busy} onClick={() => run(() => api.adminVerifyBusiness(b.userId), "Business verified.")}>
-                      Verify
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <BusinessesTab businesses={businesses} busy={busy} run={run} />
         )}
 
         {tab === "jobs" && (
-          <div className="grid gap-3">
-            {jobs.map((j) => (
-              <div key={j.id} className="card flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="font-medium">{j.title}</p>
-                  <p className="text-sm text-gray-500">
-                    Owner: {j.owner?.name} · mentor: {j.mentor?.name || "—"} · team: {j.teamSize}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={j.status} />
-                  {j.status === "delisted" ? (
-                    <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminRelistJob(j.id), "Job relisted.")}>
-                      Relist
-                    </button>
-                  ) : (
-                    <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminDelistJob(j.id), "Job delisted.")}>
-                      Delist
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <JobsTab jobs={jobs} mentors={mentors} busy={busy} run={run} />
         )}
       </main>
     </div>
@@ -242,11 +210,11 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">Mentors</h2>
-        <button className="btn-primary" onClick={() => setCreating(true)}>Create mentor</button>
+        <button className="btn-primary" onClick={() => setCreating(true)}>Add mentor</button>
       </div>
 
       {creating && (
-        <Modal title="Create mentor account" onClose={() => setCreating(false)}>
+        <Modal title="Add mentor account" onClose={() => setCreating(false)}>
           <p className="text-sm text-gray-500 mb-4">Mentors have no public signup — create their account here. Share the credentials with them.</p>
           {formError && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
           <div className="space-y-4">
@@ -275,7 +243,7 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
               <textarea className="input" rows={2} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
             </div>
             <button className="btn-primary" disabled={busy || !form.name || !form.email || form.password.length < 8} onClick={create}>
-              Create mentor
+              Add mentor
             </button>
           </div>
         </Modal>
@@ -301,10 +269,199 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
                   Unblock
                 </button>
               )}
+              <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+                onClick={() => {
+                  if (window.confirm(`Remove mentor ${m.name}? Their account is deleted and their jobs are unassigned.`)) {
+                    run(() => api.adminDeleteMentor(m.id), "Mentor removed.");
+                  }
+                }}>
+                Remove
+              </button>
             </div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow[]; busy: boolean; run: (fn: () => Promise<unknown>, msg: string) => Promise<void> }) {
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ name: "", email: "", password: "", businessName: "", sector: "", city: "" });
+  const [formError, setFormError] = useState("");
+
+  async function create() {
+    setFormError("");
+    try {
+      await api.adminCreateBusinessOwner({
+        name: form.name,
+        email: form.email,
+        password: form.password,
+        businessName: form.businessName,
+        sector: form.sector || undefined,
+        city: form.city || undefined,
+      });
+      setCreating(false);
+      setForm({ name: "", email: "", password: "", businessName: "", sector: "", city: "" });
+      await run(async () => {}, "Business owner created.");
+    } catch (err) {
+      setFormError((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">Business owners</h2>
+        <button className="btn-primary" onClick={() => setCreating(true)}>Add business owner</button>
+      </div>
+
+      {creating && (
+        <Modal title="Add business owner" onClose={() => setCreating(false)}>
+          {formError && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
+          <div className="space-y-4">
+            <div>
+              <label className="label">Contact name</label>
+              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input type="email" className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Password (min 8 chars)</label>
+              <input type="password" className="input" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Business name</label>
+              <input className="input" value={form.businessName} onChange={(e) => setForm({ ...form, businessName: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Sector</label>
+                <input className="input" value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">City</label>
+                <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              </div>
+            </div>
+            <button className="btn-primary" disabled={busy || !form.name || !form.email || form.password.length < 8 || !form.businessName} onClick={create}>
+              Add business owner
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      <div className="grid gap-3">
+        {businesses.map((b) => (
+          <div key={b.userId} className="card flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-medium">{b.businessName} <span className="text-gray-500 text-sm">({b.name} · {b.email})</span></p>
+              <p className="text-sm text-gray-500">{b.city} · {b.sector}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={b.verificationStatus === "verified" ? "badge-verified" : "badge-pending"}>{b.verificationStatus}</span>
+              {b.verificationStatus !== "verified" && (
+                <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminVerifyBusiness(b.userId), "Business verified.")}>
+                  Verify
+                </button>
+              )}
+              <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+                onClick={() => {
+                  if (window.confirm(`Remove business owner ${b.name}? Their account is deleted and their jobs cancelled.`)) {
+                    run(() => api.adminDeleteUser(b.userId), "Business owner removed.");
+                  }
+                }}>
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function JobsTab({ jobs, mentors, busy, run }: {
+  jobs: AdminJobRow[];
+  mentors: AdminMentorRow[];
+  busy: boolean;
+  run: (fn: () => Promise<unknown>, msg: string) => Promise<void>;
+}) {
+  const activeMentors = mentors.filter((m) => m.status === "active");
+
+  return (
+    <div className="grid gap-3">
+      {jobs.map((j) => (
+        <div key={j.id} className="card">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <p className="font-medium">{j.title}</p>
+              <p className="text-sm text-gray-500">
+                Owner: {j.owner?.name || "—"} · status: <StatusBadge status={j.status} />
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {j.status === "delisted" ? (
+                <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminRelistJob(j.id), "Job relisted.")}>
+                  Relist
+                </button>
+              ) : (
+                <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminDelistJob(j.id), "Job delisted.")}>
+                  Delist
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 grid md:grid-cols-2 gap-3">
+            <div className="rounded-lg bg-gray-50 p-3">
+              <p className="text-sm font-medium text-gray-700 mb-2">Mentor</p>
+              <div className="flex items-center gap-2">
+                <select
+                  className="input"
+                  value={j.mentor?.id || ""}
+                  onChange={(e) =>
+                    run(
+                      () => api.adminAssignMentor(j.id, e.target.value || null),
+                      e.target.value ? "Mentor reassigned." : "Mentor removed from job."
+                    )
+                  }
+                >
+                  <option value="">None</option>
+                  {activeMentors.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-gray-50 p-3">
+              <p className="text-sm font-medium text-gray-700 mb-2">Team ({j.teamSize})</p>
+              {j.team.length === 0 && <p className="text-sm text-gray-500">No one hired yet.</p>}
+              <div className="space-y-1.5">
+                {j.team.map((t) => (
+                  <div key={t.userId} className="flex items-center justify-between text-sm">
+                    <span>{t.name} <span className="text-gray-500">— {t.positionTitle}</span></span>
+                    <button
+                      className="text-red-600 text-xs hover:underline"
+                      disabled={busy}
+                      onClick={() => {
+                        if (window.confirm(`Free ${t.name} from this job? The job goes back to public listings if the team is no longer complete.`)) {
+                          run(() => api.adminRemoveMember(j.id, t.userId), `${t.name} removed from the job.`);
+                        }
+                      }}
+                    >
+                      Free from job
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

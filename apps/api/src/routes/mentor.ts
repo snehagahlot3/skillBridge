@@ -130,5 +130,29 @@ export function mentorRoutes() {
     });
   });
 
+  // Release a job I mentor (or admin releases on my behalf)
+  app.post("/jobs/:id/release", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.mentorId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    await db.update(jobs).set({ mentorId: null }).where(eq(jobs.id, id));
+    await db.insert(jobUpdates).values({
+      id: crypto.randomUUID(),
+      jobId: id,
+      authorId: user.id,
+      kind: "system",
+      content: `${user.name} stepped down as mentor.`,
+    });
+
+    return c.json({ ok: true });
+  });
+
   return app;
 }

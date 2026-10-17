@@ -52,7 +52,9 @@ $neha = Call POST "/api/auth/login" @{ email = "neha@demo.com"; password = "demo
 $nehaToken = $neha.json.token
 $mentor = Call POST "/api/auth/login" @{ email = "mentor@demo.com"; password = "mentor12345" }
 $mentorToken = $mentor.json.token
-Assert "logins" ($rajesh.ok -and $priya.ok -and $arjun.ok -and $neha.ok -and $mentor.ok)
+$meera = Call POST "/api/auth/login" @{ email = "meera@demo.com"; password = "mentor12345" }
+$meeraToken = $meera.json.token
+Assert "logins" ($rajesh.ok -and $priya.ok -and $arjun.ok -and $neha.ok -and $mentor.ok -and $meera.ok)
 
 Write-Host "`n=== 2. Marketplace shows only open jobs ==="
 $market = Call GET "/api/jobs" $null $priyaToken
@@ -84,6 +86,27 @@ Assert "positions parsed" ($newJob.json.positions.Count -eq 2 -and $newJob.json.
 
 $pub = Call PATCH "/api/jobs/$jobId/publish" $null $rajeshToken
 Assert "publish" ($pub.status -eq 200)
+
+Write-Host "`n=== 3b. Simple job (no positions) -> default Freelancer slot ==="
+$simpleJob = Call POST "/api/jobs" @{
+  title = "Test simple job: logo refresh"
+  description = "Refresh our shop logo with a cleaner, modern look and hand over print-ready files."
+  category = "Design"
+  requiredSkills = @("Logo Design")
+  budgetMin = 2000
+  budgetMax = 3000
+} $rajeshToken
+Assert "create simple job" ($simpleJob.status -eq 201)
+$simpleJobId = $simpleJob.json.id
+Assert "default Freelancer position" ($simpleJob.json.positions.Count -eq 1 -and $simpleJob.json.positions[0].title -eq "Freelancer" -and $simpleJob.json.positions[0].count -eq 1)
+$null = Call PATCH "/api/jobs/$simpleJobId/publish" $null $rajeshToken
+$sq = Call POST "/api/applications/$simpleJobId/apply" @{ positionId = $simpleJob.json.positions[0].id; pitch = "I have refreshed logos for 5 local shops and can deliver this week."; quoteAmount = 2500 } $arjunToken
+Assert "quote on simple job" ($sq.status -eq 201)
+$sapps = Call GET "/api/applications/$simpleJobId/applications" $null $rajeshToken
+$saccept = Call POST "/api/applications/$($sapps.json.applications[0].id)/accept" $null $rajeshToken
+Assert "single hire completes team -> awarded" ($saccept.status -eq 200 -and $saccept.json.teamComplete -eq $true)
+$sdetail = Call GET "/api/jobs/$simpleJobId" $null $rajeshToken
+Assert "simple job awarded" ($sdetail.json.status -eq "awarded")
 
 Write-Host "`n=== 4. Quotes per position ==="
 $q1 = Call POST "/api/applications/$jobId/apply" @{ positionId = $newJob.json.positions[0].id; pitch = "I can lead the campaign and coordinate the marketing side of the team."; quoteAmount = 7000 } $priyaToken
@@ -130,9 +153,15 @@ Assert "team has 3 members" ($detail.json.team.Count -eq 3)
 $portal = Call GET "/api/jobs" $null $priyaToken
 Assert "awarded job delisted from portal" (-not ($portal.json | Where-Object { $_.id -eq $jobId }))
 
-Write-Host "`n=== 6. Mentor + team work flow ==="
+Write-Host "`n=== 6. Mentor claim + free himself + re-claim ==="
 $claim = Call POST "/api/mentor/jobs/$jobId/claim" $null $mentorToken
 Assert "mentor claims" ($claim.status -eq 200)
+$release = Call POST "/api/mentor/jobs/$jobId/release" $null $mentorToken
+Assert "mentor frees himself" ($release.status -eq 200)
+$queueAgain = Call GET "/api/mentor/queue" $null $mentorToken
+Assert "job back in mentor queue" ($queueAgain.json | Where-Object { $_.id -eq $jobId })
+$claim2 = Call POST "/api/mentor/jobs/$jobId/claim" $null $mentorToken
+Assert "mentor re-claims" ($claim2.status -eq 200)
 
 $start = Call POST "/api/jobs/$jobId/start" $null $arjunToken
 Assert "team member starts" ($start.status -eq 200)
@@ -184,6 +213,45 @@ Assert "stats" ($stats.ok -and $stats.json.jobs -ge 8)
 $newMentorEmail = "testmentor$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())@demo.com"
 $newMentor = Call POST "/api/admin/mentors" @{ name = "Test Mentor"; email = $newMentorEmail; password = "password123"; expertise = @("Design") } $adminToken
 Assert "admin creates mentor" ($newMentor.status -eq 201)
+$mentorLogin = Call POST "/api/auth/login" @{ email = $newMentorEmail; password = "password123" }
+Assert "new mentor can login" ($mentorLogin.status -eq 200 -and $mentorLogin.json.user.role -eq "mentor")
+$blockMentor = Call PATCH "/api/admin/mentors/$($mentorLogin.json.user.id)/block" $null $adminToken
+Assert "block mentor" ($blockMentor.status -eq 200)
+$blockedLogin = Call POST "/api/auth/login" @{ email = $newMentorEmail; password = "password123" }
+Assert "blocked mentor cannot login" ($blockedLogin.status -eq 403)
+$unblockMentor = Call PATCH "/api/admin/mentors/$($mentorLogin.json.user.id)/unblock" $null $adminToken
+Assert "unblock mentor" ($unblockMentor.status -eq 200)
+$delMentor = Call DELETE "/api/admin/mentors/$($mentorLogin.json.user.id)" $null $adminToken
+Assert "admin removes mentor" ($delMentor.status -eq 200)
+$mentorLogin2 = Call POST "/api/auth/login" @{ email = $newMentorEmail; password = "password123" }
+Assert "removed mentor cannot login" ($mentorLogin2.status -eq 401)
+
+$reassign = Call PATCH "/api/admin/jobs/$jobId/mentor" @{ mentorId = "mentor-002" } $adminToken
+Assert "admin reassigns mentor" ($reassign.status -eq 200)
+$meeraJob = Call GET "/api/mentor/jobs/$jobId" $null $meeraToken
+Assert "new mentor sees the job" ($meeraJob.status -eq 200)
+$clearMentor = Call PATCH "/api/admin/jobs/$jobId/mentor" @{ mentorId = $null } $adminToken
+Assert "admin clears mentor" ($clearMentor.status -eq 200)
+$null = Call PATCH "/api/admin/jobs/$jobId/mentor" @{ mentorId = "mentor-001" } $adminToken
+
+$free = Call POST "/api/admin/jobs/job-008/remove-member" @{ userId = "user-006" } $adminToken
+Assert "admin frees student from job" ($free.status -eq 200)
+$job8 = Call GET "/api/jobs/job-008" $null $adminToken
+Assert "freed job back to open" ($job8.json.status -eq "open")
+$nehaFeed2 = Call GET "/api/jobs" $null $nehaToken
+Assert "freed job visible in public listings again" ($nehaFeed2.json | Where-Object { $_.id -eq "job-008" })
+
+$ownerEmail = "owner$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())@demo.com"
+$newOwner = Call POST "/api/admin/businesses" @{ name = "Test Owner"; email = $ownerEmail; password = "password123"; businessName = "Test Traders"; sector = "Retail"; city = "Pune" } $adminToken
+Assert "admin creates business owner" ($newOwner.status -eq 201)
+$ownerLogin = Call POST "/api/auth/login" @{ email = $ownerEmail; password = "password123" }
+Assert "new owner can login" ($ownerLogin.status -eq 200 -and $ownerLogin.json.user.role -eq "user")
+$ownerPub = Call GET "/api/users/$($ownerLogin.json.user.id)" $null $rajeshToken
+Assert "owner profile shows business" ($ownerPub.json.business.businessName -eq "Test Traders")
+$delOwner = Call DELETE "/api/admin/users/$($ownerLogin.json.user.id)" $null $adminToken
+Assert "admin removes business owner" ($delOwner.status -eq 200)
+$ownerLogin2 = Call POST "/api/auth/login" @{ email = $ownerEmail; password = "password123" }
+Assert "removed owner cannot login" ($ownerLogin2.status -eq 401)
 $blockUser = Call PATCH "/api/admin/users/$($arjun.json.user.id)/block" $null $adminToken
 Assert "block user" ($blockUser.status -eq 200)
 $blockedReq = Call GET "/api/profile/me" $null $arjunToken
@@ -205,10 +273,20 @@ $arjunSees = Call GET "/api/chat/$jobId/messages" $null $arjunToken
 $mentorSees = Call GET "/api/chat/$jobId/messages" $null $mentorToken
 Assert "all team members + mentor see group chat" ($priyaSees.ok -and $arjunSees.ok -and $mentorSees.ok)
 Assert "message shape camelCase (senderName/createdAt)" ($priyaSees.json.messages.Count -ge 1 -and $priyaSees.json.messages[0].senderName -and $priyaSees.json.messages[0].createdAt)
+$mentorRoom = Call GET "/api/chat/$jobId/messages?scope=mentor" $null $mentorToken
+Assert "mentor room accessible to mentor" ($mentorRoom.status -eq 200)
+$mentorRoomTeam = Call GET "/api/chat/$jobId/messages?scope=mentor" $null $priyaToken
+Assert "team member in mentor room" ($mentorRoomTeam.status -eq 200)
+$mentorRoomOwner = Call GET "/api/chat/$jobId/messages?scope=mentor" $null $rajeshToken
+Assert "owner excluded from private mentor room" ($mentorRoomOwner.status -eq 403)
+$sendMentorRoom = Call POST "/api/chat/$jobId/messages?scope=mentor" @{ text = "Private note from mentor" } $mentorToken
+Assert "mentor sends in private room" ($sendMentorRoom.status -eq 200)
+$roomsMentor = Call GET "/api/chat/rooms" $null $mentorToken
+Assert "mentor rooms include both scopes" ((($roomsMentor.json | Where-Object { $_.jobId -eq $jobId }).scope | Sort-Object -Unique) -contains "mentor")
 $outsiderChat = Call GET "/api/chat/$jobId/messages" $null $outsider.json.token
 Assert "outsider blocked" ($outsiderChat.status -eq 403)
 $rooms = Call GET "/api/chat/rooms" $null $priyaToken
-$room = $rooms.json | Where-Object { $_.jobId -eq $jobId }
+$room = $rooms.json | Where-Object { $_.jobId -eq $jobId -and $_.scope -eq "group" }
 Assert "room lists team + mentor" ($room.teamNames.Count -eq 3 -and $room.mentorName -eq "Dr. Anil Gupta")
 
 Write-Host "`n=== 11. AI brief ==="
