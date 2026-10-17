@@ -246,6 +246,46 @@ export interface Brief {
   suggestedRubric: { criterion: string; description: string; maxScore: number }[];
 }
 
+export interface AiRepo {
+  id: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  status: "active" | "paused";
+  lastReviewedSha: string | null;
+  createdAt: string;
+  lastRun: {
+    id: string;
+    commitSha: string;
+    status: "running" | "done" | "failed";
+    rating: number | null;
+    summary: string | null;
+    createdAt: string;
+  } | null;
+}
+
+export interface ReviewFinding {
+  file: string;
+  line: number | null;
+  severity: "critical" | "high" | "medium" | "low";
+  issue: string;
+  suggestion: string;
+}
+
+export interface ReviewRun {
+  id: string;
+  commitSha: string;
+  commitMessage: string | null;
+  status: "running" | "done" | "failed";
+  summary: string | null;
+  rating: number | null;
+  findings: ReviewFinding[];
+  suggestedFixes: string[];
+  commentUrl: string | null;
+  tokensUsed: number | null;
+  createdAt: string;
+}
+
 export interface MentorJob extends Job {
   ownerName: string | null;
   teamNames: { userId: string; name: string; positionTitle: string }[];
@@ -640,6 +680,26 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify({ mode, message, history, jobId }),
     });
+  }
+
+  aiGithubConnect(data: { owner: string; repo: string; token: string; branch?: string }) {
+    return this.fetch("/ai/github/repos", { method: "POST", body: JSON.stringify(data) });
+  }
+
+  aiGithubRepos(): Promise<AiRepo[]> {
+    return this.fetch("/ai/github/repos");
+  }
+
+  aiGithubReview(repoId: string): Promise<ReviewRun> {
+    return this.fetch(`/ai/github/repos/${repoId}/review`, { method: "POST" });
+  }
+
+  aiGithubRuns(repoId: string): Promise<ReviewRun[]> {
+    return this.fetch(`/ai/github/repos/${repoId}/runs`);
+  }
+
+  aiGithubDelete(repoId: string) {
+    return this.fetch(`/ai/github/repos/${repoId}`, { method: "DELETE" });
   }
 
   generateBrief(description: string, language: string = "en"): Promise<Brief> {

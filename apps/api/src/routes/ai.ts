@@ -1,8 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { jobs } from "../db/schema";
+import { eq, desc } from "drizzle-orm";
+import { jobs, aiRepos, reviewRuns } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
+import { encryptToken } from "../lib/crypto";
+import { runReviewForRepo } from "../lib/reviewEngine";
+import { AI_MODEL } from "../lib/aiModel";
 import type { AppEnv } from "../types";
 
 const briefSchema = z.object({
@@ -33,6 +36,13 @@ Keep replies short, structured and practical.`;
 
 const CHAT_FALLBACK =
   "I'm sorry, the AI service is unavailable right now. Try again in a moment — meanwhile, you can draft your job with the description, required skills, budget range and deadline fields in the form.";
+
+const connectRepoSchema = z.object({
+  owner: z.string().min(1).max(100),
+  repo: z.string().min(1).max(100),
+  token: z.string().min(10).max(500),
+  branch: z.string().min(1).max(100).optional(),
+});
 
 const SAMPLE_BRIEF = {
   title: "Inventory Stockout Dashboard",
@@ -95,7 +105,7 @@ export function aiRoutes() {
     ];
 
     try {
-      const response = await c.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      const response = await c.env.AI.run(AI_MODEL, {
         messages,
         max_tokens: 700,
       });
@@ -126,7 +136,7 @@ export function aiRoutes() {
 
 Business description: ${parsed.data.description}`;
 
-      const response = await c.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      const response = await c.env.AI.run(AI_MODEL, {
         messages: [{ role: "user", content: prompt }],
         max_tokens: 1024,
       });
@@ -139,6 +149,145 @@ Business description: ${parsed.data.description}`;
     } catch (error) {
       return c.json(SAMPLE_BRIEF);
     }
+  });
+
+  // ---- GitHub code-review agent (single AI reviewer) ----
+
+  app.post("/github/repos", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const body = await c.req.json();
+    const parsed = connectRepoSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const id = crypto.randomUUID();
+    const tokenEnc = await encryptToken(parsed.data.token, c.env.JWT_SECRET);
+    await db.insert(aiRepos).values({
+      id,
+      userId: user.id,
+      owner: parsed.data.owner,
+      repo: parsed.data.repo,
+      branch: parsed.data.branch || "main",
+      tokenEnc,
+    });
+
+    return c.json({ ok: true, id }, 201);
+  });
+
+  app.get("/github/repos", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+
+    const repos = await db
+      .select()
+      .from(aiRepos)
+      .where(eq(aiRepos.userId, user.id))
+      .orderBy(desc(aiRepos.createdAt));
+
+    const enriched = await Promise.all(
+      repos.map(async (r) => {
+        const [lastRun] = await db
+          .select()
+          .from(reviewRuns)
+          .where(eq(reviewRuns.repoId, r.id))
+          .orderBy(desc(reviewRuns.createdAt))
+          .limit(1);
+        return {
+          id: r.id,
+          owner: r.owner,
+          repo: r.repo,
+          branch: r.branch,
+          status: r.status,
+          lastReviewedSha: r.lastReviewedSha,
+          createdAt: r.createdAt,
+          lastRun: lastRun
+            ? {
+                id: lastRun.id,
+                commitSha: lastRun.commitSha,
+                status: lastRun.status,
+                rating: lastRun.rating,
+                summary: lastRun.summary,
+                createdAt: lastRun.createdAt,
+              }
+            : null,
+        };
+      })
+    );
+
+    return c.json(enriched);
+  });
+
+  app.post("/github/repos/:id/review", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+
+    const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
+    if (!repo) return c.json({ error: "Repo not found" }, 404);
+    if (repo.userId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const run = await runReviewForRepo(c.env, db, repo);
+    if (run.status === "failed") {
+      return c.json({ error: "Review failed — check that the token is valid and the repo exists", run }, 502);
+    }
+    return c.json({
+      id: run.id,
+      commitSha: run.commitSha,
+      commitMessage: run.commitMessage,
+      status: run.status,
+      summary: run.summary,
+      rating: run.rating,
+      findings: JSON.parse(run.findings || "[]"),
+      suggestedFixes: JSON.parse(run.suggestedFixes || "[]"),
+      commentUrl: run.commentUrl,
+      tokensUsed: run.tokensUsed,
+      createdAt: run.createdAt,
+    });
+  });
+
+  app.get("/github/repos/:id/runs", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+
+    const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
+    if (!repo) return c.json({ error: "Repo not found" }, 404);
+    if (repo.userId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const runs = await db
+      .select()
+      .from(reviewRuns)
+      .where(eq(reviewRuns.repoId, id))
+      .orderBy(desc(reviewRuns.createdAt))
+      .limit(20);
+
+    return c.json(
+      runs.map((r) => ({
+        ...r,
+        findings: JSON.parse(r.findings || "[]"),
+        suggestedFixes: JSON.parse(r.suggestedFixes || "[]"),
+      }))
+    );
+  });
+
+  app.delete("/github/repos/:id", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+
+    const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
+    if (!repo) return c.json({ error: "Repo not found" }, 404);
+    if (repo.userId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    await db.delete(reviewRuns).where(eq(reviewRuns.repoId, id));
+    await db.delete(aiRepos).where(eq(aiRepos.id, id));
+    return c.json({ ok: true });
   });
 
   return app;

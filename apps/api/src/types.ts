@@ -7,6 +7,7 @@ export interface Env {
   CHAT_ROOM: DurableObjectNamespace;
   JWT_SECRET: string;
   FRONTEND_URL: string;
+  AI_GITHUB_MOCK?: string;
 }
 
 export interface AuthUser {

@@ -2,6 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "entries": [
-    { "idx": 0, "version": "6", "when": 1760640000000, "tag": "0000_revamp", "breakpoints": true }
+    { "idx": 0, "version": "6", "when": 1760640000000, "tag": "0000_revamp", "breakpoints": true },
+    { "idx": 1, "version": "6", "when": 1760800000000, "tag": "0001_ai_github", "breakpoints": true }
   ]
 }

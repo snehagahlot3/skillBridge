@@ -321,6 +321,33 @@ Assert "ai chat rejects bad mode" ($aiBadMode.status -eq 400)
 $aiNoAuth = Call POST "/api/ai/chat" @{ mode = "owner"; message = "Should be blocked without auth." } $null
 Assert "ai chat requires auth" ($aiNoAuth.status -eq 401)
 
+Write-Host "`n=== 12. GitHub code-review agent (mock mode) ==="
+$connect = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789" } $rajeshToken
+Assert "connect repo" ($connect.status -eq 201)
+$repoId = $connect.json.id
+
+$reposList = Call GET "/api/ai/github/repos" $null $rajeshToken
+Assert "repos listed" ($reposList.ok -and $reposList.json.Count -eq 1 -and $reposList.json[0].owner -eq "testorg")
+Assert "token not leaked" (-not ($reposList.json[0].PSObject.Properties.Name -contains "tokenEnc") -and $reposList.Content -notmatch "ghp_mock")
+
+$review = Call POST "/api/ai/github/repos/$repoId/review" $null $rajeshToken
+Assert "review now runs" ($review.status -eq 200 -and $review.json.status -eq "done")
+Assert "review has sha/rating/findings/comment" ($review.json.commitSha -and $review.json.rating -ge 1 -and $review.json.rating -le 5 -and $review.json.findings -is [System.Array] -and $review.json.commentUrl)
+Assert "review summary non-empty" ($review.json.summary.Length -gt 10)
+
+$runs = Call GET "/api/ai/github/repos/$repoId/runs" $null $rajeshToken
+Assert "runs history" ($runs.ok -and $runs.json.Count -ge 1 -and $runs.json[0].status -eq "done")
+
+$foreignRuns = Call GET "/api/ai/github/repos/$repoId/runs" $null $priyaToken
+Assert "other user cannot see runs" ($foreignRuns.status -eq 403)
+$badDelete = Call DELETE "/api/ai/github/repos/$repoId" $null $priyaToken
+Assert "other user cannot delete" ($badDelete.status -eq 403)
+
+$del = Call DELETE "/api/ai/github/repos/$repoId" $null $rajeshToken
+Assert "disconnect repo" ($del.status -eq 200)
+$reposAfter = Call GET "/api/ai/github/repos" $null $rajeshToken
+Assert "repo removed" ($reposAfter.json.Count -eq 0)
+
 Write-Host "`n======================"
 Write-Host "RESULT: $($script:pass) passed, $($script:fail) failed" -ForegroundColor $(if ($script:fail -eq 0) { "Green" } else { "Red" })
 exit $(if ($script:fail -eq 0) { 0 } else { 1 })
