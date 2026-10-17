@@ -305,9 +305,21 @@ $rooms = Call GET "/api/chat/rooms" $null $priyaToken
 $room = $rooms.json | Where-Object { $_.jobId -eq $jobId -and $_.scope -eq "group" }
 Assert "room lists team + mentor" ($room.teamNames.Count -eq 3 -and $room.mentorName -eq "Dr. Anil Gupta")
 
-Write-Host "`n=== 11. AI brief ==="
+Write-Host "`n=== 11. AI brief + assistant chat ==="
 $brief = Call POST "/api/ai/project-brief" @{ description = "We need a poster for our annual sale with festive themes and our logo."; language = "en" } $rajeshToken
 Assert "ai brief" ($brief.status -eq 200 -and $brief.json.title)
+
+$aiOwner = Call POST "/api/ai/chat" @{ mode = "owner"; message = "I run a small bakery and want more Diwali orders. What should I post?"; history = @(@{ role = "user"; content = "I want to grow my bakery sales." }) } $rajeshToken
+Assert "ai chat owner mode" ($aiOwner.status -eq 200 -and $aiOwner.json.reply.Length -gt 20)
+
+$aiStudent = Call POST "/api/ai/chat" @{ mode = "student"; jobId = "job-001"; message = "What is this job actually asking for, and what should my quote cover?" } $priyaToken
+Assert "ai chat student mode (job context)" ($aiStudent.status -eq 200 -and $aiStudent.json.reply.Length -gt 20)
+
+$aiBadMode = Call POST "/api/ai/chat" @{ mode = "hacker"; message = "x" } $priyaToken
+Assert "ai chat rejects bad mode" ($aiBadMode.status -eq 400)
+
+$aiNoAuth = Call POST "/api/ai/chat" @{ mode = "owner"; message = "Should be blocked without auth." } $null
+Assert "ai chat requires auth" ($aiNoAuth.status -eq 401)
 
 Write-Host "`n======================"
 Write-Host "RESULT: $($script:pass) passed, $($script:fail) failed" -ForegroundColor $(if ($script:fail -eq 0) { "Green" } else { "Red" })

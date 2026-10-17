@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { FileText, Github, Globe, Linkedin, MessageCircle } from "lucide-react";
+import { FileText, Github, Globe, Linkedin, MessageCircle, Sparkles } from "lucide-react";
 import {
   api,
   budgetLabel,
@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Modal, RatingInput, Stars, StatusBadge } from "../components/ui";
+import Assistant from "../components/Assistant";
 
 export default function JobDetail() {
   const { id } = useParams();
@@ -23,6 +24,7 @@ export default function JobDetail() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
 
   async function load() {
     try {
@@ -82,6 +84,11 @@ export default function JobDetail() {
               <Link to={`/chat/${job.id}`} className="btn-secondary text-sm">
                 <MessageCircle className="w-4 h-4 mr-1" /> Group chat
               </Link>
+            )}
+            {!isOwner && !isMentor && (
+              <button onClick={() => setAiOpen(true)} className="btn-secondary text-sm">
+                <Sparkles className="w-4 h-4 mr-1" /> AI help
+              </button>
             )}
             <button onClick={() => navigate(-1)} className="btn-ghost">Back</button>
           </div>
@@ -204,6 +211,12 @@ export default function JobDetail() {
 
         {job.status === "completed" && (
           <ReviewsSection job={job} team={team} me={user} onChanged={load} onError={setToast} />
+        )}
+
+        {aiOpen && (
+          <Modal title="Ask AI about this job" onClose={() => setAiOpen(false)} wide>
+            <Assistant bare defaultMode="student" jobId={job.id} jobTitle={job.title} />
+          </Modal>
         )}
       </main>
     </div>

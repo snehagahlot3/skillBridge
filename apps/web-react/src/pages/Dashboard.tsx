@@ -4,8 +4,9 @@ import { Upload } from "lucide-react";
 import { api, budgetLabel, type Job, type MyApplication, type ChatRoomSummary, type JobReview, type PublicUser } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Stars, StatusBadge } from "../components/ui";
+import Assistant from "../components/Assistant";
 
-type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile";
+type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "ai";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ export default function Dashboard() {
     { id: "myjobs", label: "My Jobs" },
     { id: "mywork", label: "My Work" },
     { id: "messages", label: `Messages${rooms.some((r) => r.unread > 0) ? ` (${rooms.reduce((s, r) => s + r.unread, 0)})` : ""}` },
+    { id: "ai", label: "AI Help" },
     { id: "profile", label: "Profile" },
   ];
 
@@ -95,6 +97,7 @@ export default function Dashboard() {
         {tab === "myjobs" && <MyJobs jobs={myJobs} onChanged={loadAll} onError={setToast} />}
         {tab === "mywork" && <MyWork items={myWork} />}
         {tab === "messages" && <Messages rooms={rooms} onOpened={() => setTimeout(loadAll, 500)} />}
+        {tab === "ai" && <Assistant />}
         {tab === "profile" && <ProfileTab onChanged={refresh} onError={setToast} />}
       </main>
     </div>

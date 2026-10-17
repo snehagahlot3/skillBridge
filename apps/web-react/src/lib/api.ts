@@ -630,6 +630,18 @@ class ApiClient {
   }
 
   // ---- ai ----
+  aiChat(
+    mode: "owner" | "student",
+    message: string,
+    history?: { role: "user" | "assistant"; content: string }[],
+    jobId?: string
+  ): Promise<{ reply: string }> {
+    return this.fetch("/ai/chat", {
+      method: "POST",
+      body: JSON.stringify({ mode, message, history, jobId }),
+    });
+  }
+
   generateBrief(description: string, language: string = "en"): Promise<Brief> {
     return this.fetch("/ai/project-brief", {
       method: "POST",
