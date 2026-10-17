@@ -26,11 +26,18 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="card w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-1">Sign in</h1>
-        <p className="text-sm text-gray-500 mb-6">Users, mentors and admins sign in here.</p>
-        {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+    <div className="min-h-screen bg-bg text-ink flex flex-col items-center justify-center px-4 py-12">
+      <Link to="/" className="font-serif text-[26px] font-semibold text-ink tracking-tight mb-8 hover:opacity-95">
+        SkillBridge
+      </Link>
+      <div className="card w-full max-w-md p-8">
+        <h1 className="heading-title mb-1">Sign in</h1>
+        <p className="text-sm text-muted mb-6">Users, mentors and admins sign in here.</p>
+        {error && (
+          <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">
+            {error}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Email</label>
@@ -44,15 +51,15 @@ export default function Login() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
-        <div className="mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-600 space-y-1">
-          <p className="font-medium text-gray-700">Demo logins</p>
+        <div className="mt-6 rounded-[8px] border border-line bg-bg/70 p-4 text-xs text-muted space-y-1">
+          <p className="font-semibold text-ink mb-1">Demo logins</p>
           <p>User — priya@demo.com / demo12345</p>
           <p>Owner — rajesh@demo.com / demo12345</p>
           <p>Mentor — mentor@demo.com / mentor12345</p>
           <p>Admin — admin@demo.com / admin12345</p>
         </div>
-        <p className="mt-4 text-sm text-center text-gray-600">
-          No account? <Link to="/signup" className="text-brand-600 hover:underline">Sign up</Link>
+        <p className="mt-6 text-sm text-center text-muted">
+          No account? <Link to="/signup" className="text-accent hover:underline font-medium">Sign up</Link>
         </p>
       </div>
     </div>

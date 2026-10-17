@@ -98,80 +98,115 @@ export default function Chat() {
     job != null && (job.myRole === "mentor" || job.myRole === "team");
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-4xl w-full px-4 py-3 flex items-center justify-between">
+    <div className="min-h-screen bg-bg text-ink flex flex-col">
+      <header className="border-b border-line bg-surface sticky top-0 z-40">
+        <div className="mx-auto max-w-[1120px] w-full px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-brand-600">SkillBridge</h1>
-            <span className="text-gray-300">/</span>
+            <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
+              SkillBridge
+            </Link>
+            <span className="text-muted/40">/</span>
             {job ? (
               <div className="flex items-center gap-2">
-                <Link to={`/jobs/${job.id}`} className="font-medium hover:underline">{job.title}</Link>
+                <Link to={`/jobs/${job.id}`} className="font-medium text-ink hover:text-accent transition-colors">
+                  {job.title}
+                </Link>
                 <StatusBadge status={job.status} />
               </div>
             ) : (
-              <span className="text-gray-400">Chat</span>
+              <span className="text-muted">Chat</span>
             )}
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs ${status === "open" ? "text-green-600" : status === "connecting" ? "text-yellow-600" : "text-gray-400"}`}>
-              {status === "open" ? "● live" : status === "connecting" ? "● connecting…" : "○ offline (retry with REST)"}
+            <span className="text-xs text-muted flex items-center gap-1.5">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  status === "open"
+                    ? "bg-butter border border-ink"
+                    : status === "connecting"
+                      ? "bg-lavender"
+                      : "bg-line"
+                }`}
+              />
+              {status === "open" ? "live" : status === "connecting" ? "connecting…" : "offline (retry with REST)"}
             </span>
-            <button onClick={() => navigate(-1)} className="btn-ghost">Back</button>
+            <button onClick={() => navigate(-1)} className="btn-ghost text-sm">
+              Back
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl w-full px-4 py-4 flex-1 flex flex-col">
-        {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      <main className="mx-auto max-w-[1120px] w-full px-6 py-6 flex-1 flex flex-col">
+        {error && (
+          <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">
+            {error}
+          </div>
+        )}
 
-        <div className="card flex-1 flex flex-col min-h-[60vh] max-h-[70vh]">
+        <div className="card flex-1 flex flex-col min-h-[65vh] max-h-[75vh] p-6">
           {/* Room toggle (mentors + students only) */}
-          <div className="flex items-center justify-between border-b pb-3 mb-3">
+          <div className="flex items-center justify-between border-b border-line pb-4 mb-4 flex-wrap gap-2">
             {canSeeMentorRoom ? (
-              <div className="inline-flex rounded-lg border border-gray-300 p-1 gap-1">
+              <div className="inline-flex rounded-[8px] border border-line bg-bg p-1 gap-1">
                 <button
+                  type="button"
                   onClick={() => setScope("group")}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "group" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  className={`px-3 py-1.5 text-xs rounded-[6px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                    scope === "group"
+                      ? "bg-ink text-white font-semibold shadow-sm"
+                      : "text-muted hover:text-ink font-medium"
+                  }`}
                 >
                   Group chat
                 </button>
                 <button
+                  type="button"
                   onClick={() => setScope("mentor")}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md ${scope === "mentor" ? "bg-brand-600 text-white" : "text-gray-600 hover:bg-gray-100"}`}
+                  className={`px-3 py-1.5 text-xs rounded-[6px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                    scope === "mentor"
+                      ? "bg-ink text-white font-semibold shadow-sm"
+                      : "text-muted hover:text-ink font-medium"
+                  }`}
                 >
                   Mentor + team
                 </button>
               </div>
             ) : (
-              <span className="badge bg-green-100 text-green-800">Group chat</span>
+              <span className="badge-lavender">Group chat</span>
             )}
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted">
               {scope === "mentor"
                 ? "Private — owner cannot see this room"
                 : "Owner + team + mentor all see this room"}
             </p>
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+          <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
             {messages.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-8">
+              <div className="empty-state my-auto">
                 {scope === "mentor"
                   ? "No messages yet. This is the private room between the mentor and the hired team."
                   : `No messages yet. The business owner${job?.team && job.team.length > 0 ? ", the hired team" : ""}${job?.mentorId ? " and the assigned mentor" : ""} all see these messages.`}
-              </p>
+              </div>
             )}
             {messages.map((m) => {
               const mine = m.senderId === meId;
               return (
                 <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-                  <div className={`flex items-start gap-2 max-w-[75%] ${mine ? "flex-row-reverse" : ""}`}>
+                  <div className={`flex items-start gap-2.5 max-w-[75%] ${mine ? "flex-row-reverse" : ""}`}>
                     <Avatar name={m.senderName} />
                     <div>
-                      <div className={`rounded-xl px-4 py-2 text-sm ${mine ? "bg-brand-600 text-white" : "bg-gray-100 text-gray-800"}`}>
-                        <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                      <div
+                        className={`rounded-[12px] px-4 py-2.5 text-sm ${
+                          mine
+                            ? "bg-ink text-white font-normal"
+                            : "bg-surface border border-line text-ink"
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">{m.text}</p>
                       </div>
-                      <p className={`text-xs text-gray-400 mt-1 ${mine ? "text-right" : ""}`}>
+                      <p className={`text-xs text-muted mt-1 ${mine ? "text-right" : ""}`}>
                         {m.senderName} · {m.senderRole} · {new Date(m.createdAt).toLocaleTimeString()}
                       </p>
                     </div>
@@ -182,7 +217,7 @@ export default function Chat() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="border-t pt-3 mt-3 flex gap-2">
+          <div className="border-t border-line pt-4 mt-3 flex gap-2">
             <input
               className="input"
               placeholder={scope === "mentor" ? "Message the mentor + team privately..." : "Type a message..."}
@@ -195,8 +230,14 @@ export default function Chat() {
                 }
               }}
             />
-            <button className="btn-primary shrink-0" onClick={send} disabled={!text.trim()}>
-              <Send className="w-4 h-4" />
+            <button
+              type="button"
+              className="btn-primary shrink-0 px-4"
+              onClick={send}
+              disabled={!text.trim()}
+              aria-label="Send message"
+            >
+              <Send strokeWidth={1.5} className="w-4 h-4 text-white" />
             </button>
           </div>
         </div>

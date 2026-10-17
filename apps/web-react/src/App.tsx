@@ -13,7 +13,7 @@ import MentorDashboard from "./pages/MentorDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 
 function FullScreenLoader() {
-  return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
+  return <div className="min-h-screen bg-bg flex items-center justify-center text-muted">Loading...</div>;
 }
 
 function Protected({ roles, children }: { roles?: Role[]; children: ReactElement }) {

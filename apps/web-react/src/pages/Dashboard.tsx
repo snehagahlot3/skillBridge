@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Upload } from "lucide-react";
 import { api, budgetLabel, type Job, type MyApplication, type ChatRoomSummary, type JobReview, type PublicUser } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Stars, StatusBadge } from "../components/ui";
+import { Stars, StatusBadge, VerifiedBadge } from "../components/ui";
 import Assistant from "../components/Assistant";
 
 type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "ai";
@@ -48,7 +48,7 @@ export default function Dashboard() {
     navigate("/");
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted">Loading...</div>;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "find", label: "Find Jobs" },
@@ -59,39 +59,57 @@ export default function Dashboard() {
     { id: "profile", label: "Profile" },
   ];
 
-  const totalUnread = rooms.reduce((s, r) => s + r.unread, 0);
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-bg text-ink flex flex-col">
+      {/* Top bar: white, hairline bottom border, serif logo, verified business badge */}
+      <header className="border-b border-line bg-surface sticky top-0 z-40">
+        <div className="mx-auto max-w-[1120px] px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold text-brand-600">SkillBridge</h1>
-            {me?.business?.verificationStatus === "verified" && <span className="badge-verified">Verified business</span>}
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{user?.name}</span>
-            {me?.profile?.publicSlug && (
-              <Link to={`/users/${user?.id}`} className="btn-ghost text-sm">Public profile</Link>
+            <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
+              SkillBridge
+            </Link>
+            {me?.business?.verificationStatus === "verified" && (
+              <VerifiedBadge label="Verified business" />
             )}
-            <button onClick={signOut} className="btn-ghost">Sign out</button>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted">{user?.name}</span>
+            {me?.profile?.publicSlug && (
+              <Link to={`/users/${user?.id}`} className="btn-ghost text-sm">
+                Public profile
+              </Link>
+            )}
+            <button onClick={signOut} className="btn-ghost text-sm">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="flex gap-2 mb-6 flex-wrap">
+      <main className="mx-auto max-w-[1120px] px-6 py-8 flex-1 w-full">
+        {/* Main Navigation: plain text links, active item has 3px butter underline, inactive are muted, scrolls horizontally if needed */}
+        <nav className="flex items-center gap-6 overflow-x-auto border-b border-line mb-8 pb-0 scrollbar-none whitespace-nowrap" aria-label="Main Navigation">
           {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={tab === t.id ? "btn-primary" : "btn-secondary"}>
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`relative pb-3 pt-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm ${
+                tab === t.id
+                  ? "text-ink font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[3px] after:bg-butter"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
               {t.label}
-              {t.id === "messages" && totalUnread > 0 && (
-                <span className="ml-1 rounded-full bg-brand-600 text-white text-xs px-1.5">{totalUnread}</span>
-              )}
             </button>
           ))}
-        </div>
+        </nav>
 
-        {toast && <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
+        {toast && (
+          <div className="mb-6 rounded-[8px] border border-line bg-surface p-4 text-sm text-ink border-l-4 border-l-accent">
+            {toast}
+          </div>
+        )}
 
         {tab === "find" && <FindJobs jobs={openJobs} />}
         {tab === "myjobs" && <MyJobs jobs={myJobs} onChanged={loadAll} onError={setToast} />}
@@ -112,55 +130,90 @@ function FindJobs({ jobs }: { jobs: Job[] }) {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 className="text-2xl font-bold">Open jobs</h2>
-        <input className="input max-w-xs" placeholder="Filter by skill..." value={skillFilter} onChange={(e) => setSkillFilter(e.target.value)} />
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
+        <h2 className="heading-title">Open jobs</h2>
+        <input
+          className="input max-w-xs"
+          placeholder="Filter by skill..."
+          value={skillFilter}
+          onChange={(e) => setSkillFilter(e.target.value)}
+        />
       </div>
+
       <div className="grid gap-4">
         {filtered.map((job) => {
           const applied = job.myApplication != null;
           const hiredCount = (job.positionFill ?? []).reduce((s, p) => s + (p.filled ?? 0), 0);
           const totalPositions = (job.positionFill ?? []).reduce((s, p) => s + p.count, 0);
           return (
-            <div key={job.id} className="card">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
-                  <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 160)}{job.description.length > 160 ? "…" : ""}</p>
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
-                    <span className="badge bg-gray-100 text-gray-700">{job.category}</span>
-                    {job.owner?.businessName && <span className="badge bg-gray-100 text-gray-700">{job.owner.businessName}</span>}
-                    {job.owner?.verificationStatus === "verified" && <span className="badge-verified">Verified</span>}
+            <div key={job.id} className="card p-6">
+              <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <Link to={`/jobs/${job.id}`} className="heading-card hover:text-accent transition-colors block">
+                    {job.title}
+                  </Link>
+                  <p className="text-sm text-muted mt-1 leading-relaxed">
+                    {job.description.slice(0, 160)}{job.description.length > 160 ? "…" : ""}
+                  </p>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <span className="badge-budget">{budgetLabel(job)}</span>
+                    <span className="badge-skill">{job.category}</span>
+                    {job.owner?.businessName && (
+                      <span className="badge-skill">{job.owner.businessName}</span>
+                    )}
+                    {job.owner?.verificationStatus === "verified" && (
+                      <VerifiedBadge label="Verified" />
+                    )}
                     {totalPositions > 1 && (
-                      <span className="badge bg-blue-50 text-blue-700">
+                      <span className="badge-lavender">
                         {hiredCount > 0 ? `Team hiring: ${hiredCount}/${totalPositions} filled` : `Team of ${totalPositions} needed`}
                       </span>
                     )}
                     {applied && (
-                      <span className={`badge ${job.myApplication!.status === "accepted" ? "badge-verified" : job.myApplication!.status === "rejected" ? "bg-gray-100 text-gray-500" : "badge-pending"}`}>
+                      <span
+                        className={
+                          job.myApplication!.status === "accepted"
+                            ? "badge-verified"
+                            : job.myApplication!.status === "rejected"
+                              ? "badge-draft"
+                              : "badge-open"
+                        }
+                      >
                         {job.myApplication!.status === "pending" ? "Applied — awaiting decision" : job.myApplication!.status}
                       </span>
                     )}
                   </div>
                 </div>
-                {!applied ? (
-                  <Link to={`/jobs/${job.id}`} className="btn-primary shrink-0">View &amp; quote</Link>
-                ) : (
-                  <Link to={`/jobs/${job.id}`} className="btn-secondary shrink-0">View application</Link>
-                )}
+
+                <div className="shrink-0 pt-1">
+                  {!applied ? (
+                    <Link to={`/jobs/${job.id}`} className="btn-primary shrink-0">
+                      View &amp; quote
+                    </Link>
+                  ) : (
+                    <Link to={`/jobs/${job.id}`} className="btn-secondary shrink-0">
+                      View application
+                    </Link>
+                  )}
+                </div>
               </div>
+
               {job.requiredSkills?.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
+                <div className="mt-4 pt-3 border-t border-line flex flex-wrap gap-1.5">
                   {job.requiredSkills.map((skill) => (
-                    <span key={skill} className="badge bg-gray-100 text-gray-700">{skill}</span>
+                    <span key={skill} className="badge-skill">
+                      {skill}
+                    </span>
                   ))}
                 </div>
               )}
             </div>
           );
         })}
-        {filtered.length === 0 && <div className="card text-center text-gray-500">No open jobs found.</div>}
+
+        {filtered.length === 0 && (
+          <div className="empty-state">No open jobs found.</div>
+        )}
       </div>
     </>
   );
@@ -172,32 +225,55 @@ function MyJobs({ jobs, onChanged, onError }: { jobs: Job[]; onChanged: () => Pr
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold">Jobs I posted</h2>
-        <button onClick={() => setShowForm(true)} className="btn-primary">Post a job</button>
+        <h2 className="heading-title">Jobs I posted</h2>
+        <button onClick={() => setShowForm(true)} className="btn-primary">
+          Post a job
+        </button>
       </div>
 
-      {showForm && <PostJobForm onDone={() => { setShowForm(false); onChanged(); }} onError={onError} />}
+      {showForm && (
+        <PostJobForm
+          onDone={() => {
+            setShowForm(false);
+            onChanged();
+          }}
+          onError={onError}
+        />
+      )}
 
       <div className="grid gap-4">
         {jobs.map((job) => (
-          <div key={job.id} className="card">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
-                <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 140)}{job.description.length > 140 ? "…" : ""}</p>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
+          <div key={job.id} className="card p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+              <div className="flex-1 min-w-0">
+                <Link to={`/jobs/${job.id}`} className="heading-card hover:text-accent transition-colors block">
+                  {job.title}
+                </Link>
+                <p className="text-sm text-muted mt-1 leading-relaxed">
+                  {job.description.slice(0, 140)}{job.description.length > 140 ? "…" : ""}
+                </p>
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <span className="badge-budget">{budgetLabel(job)}</span>
                   <StatusBadge status={job.status} />
                   {job.applicationCount != null && job.applicationCount > 0 && (
-                    <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quote{job.applicationCount === 1 ? "" : "s"}</span>
+                    <span className="badge-lavender">
+                      {job.applicationCount} quote{job.applicationCount === 1 ? "" : "s"}
+                    </span>
                   )}
                 </div>
               </div>
-              <Link to={`/jobs/${job.id}`} className="btn-secondary shrink-0">Manage</Link>
+              <div className="shrink-0 pt-1">
+                <Link to={`/jobs/${job.id}`} className="btn-tertiary shrink-0">
+                  Manage
+                </Link>
+              </div>
             </div>
           </div>
         ))}
-        {jobs.length === 0 && <div className="card text-center text-gray-500">No jobs posted yet. Post your first job!</div>}
+
+        {jobs.length === 0 && (
+          <div className="empty-state">No jobs posted yet. Post your first job!</div>
+        )}
       </div>
     </>
   );
@@ -278,20 +354,34 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
   }
 
   return (
-    <div className="card mb-6">
-      <h3 className="font-semibold text-lg mb-4">Post a new job</h3>
+    <div className="card p-6 mb-6">
+      <h3 className="heading-card mb-4">Post a new job</h3>
       <div className="space-y-5">
         <section>
           <label className="label">Describe the job in plain language (AI will structure it)</label>
-          <textarea className="input" rows={3} placeholder="e.g. We need a Diwali sale campaign for our store: Instagram posts, reel scripts and a caption calendar..."
-            value={aiDescription} onChange={(e) => setAiDescription(e.target.value)} />
-          <button onClick={generateBrief} className="btn-secondary mt-2" disabled={aiLoading || aiDescription.trim().length < 20}>
+          <textarea
+            className="input"
+            rows={3}
+            placeholder="e.g. We need a Diwali sale campaign for our store: Instagram posts, reel scripts and a caption calendar..."
+            value={aiDescription}
+            onChange={(e) => setAiDescription(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={generateBrief}
+            className="btn-secondary mt-2.5"
+            disabled={aiLoading || aiDescription.trim().length < 20}
+          >
             {aiLoading ? "Generating..." : "Generate AI brief"}
           </button>
-          {aiBrief && <p className="mt-2 text-sm text-brand-700">AI brief generated — edit the fields below before publishing.</p>}
+          {aiBrief && (
+            <p className="mt-2 text-sm text-accent">
+              AI brief generated — edit the fields below before publishing.
+            </p>
+          )}
         </section>
 
-        <section className="border-t pt-4">
+        <section className="border-t border-line pt-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">Title</label>
@@ -299,7 +389,12 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
             </div>
             <div>
               <label className="label">Category</label>
-              <input className="input" placeholder="Marketing, Video Editing, Web Design, Software..." value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+              <input
+                className="input"
+                placeholder="Marketing, Video Editing, Web Design, Software..."
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              />
             </div>
           </div>
           <div className="mt-4">
@@ -326,8 +421,13 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           </div>
           <div className="mt-4">
             <label className="label">Team positions (optional — leave empty to hire a single freelancer)</label>
-            <textarea className="input" rows={3} placeholder={"Marketing x3\nGraphic Designer x1\nContent Creator x1"}
-              value={form.positions} onChange={(e) => setForm({ ...form, positions: e.target.value })} />
+            <textarea
+              className="input"
+              rows={3}
+              placeholder={"Marketing x3\nGraphic Designer x1\nContent Creator x1"}
+              value={form.positions}
+              onChange={(e) => setForm({ ...form, positions: e.target.value })}
+            />
           </div>
           <div className="mt-4">
             <label className="label">Acceptance criteria</label>
@@ -335,16 +435,23 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           </div>
           <div className="mt-4">
             <label className="label">Milestones (one per line, optional: "Title (due YYYY-MM-DD)")</label>
-            <textarea className="input" rows={3} placeholder={"Concept (due 2026-11-01)\nFinal delivery (due 2026-11-10)"}
-              value={form.milestones} onChange={(e) => setForm({ ...form, milestones: e.target.value })} />
+            <textarea
+              className="input"
+              rows={3}
+              placeholder={"Concept (due 2026-11-01)\nFinal delivery (due 2026-11-10)"}
+              value={form.milestones}
+              onChange={(e) => setForm({ ...form, milestones: e.target.value })}
+            />
           </div>
         </section>
 
-        <div className="flex gap-2">
-          <button onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
+        <div className="flex gap-3 pt-2">
+          <button type="button" onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
             {busy ? "Saving..." : "Save as draft"}
           </button>
-          <button onClick={onDone} className="btn-ghost">Cancel</button>
+          <button type="button" onClick={onDone} className="btn-ghost">
+            Cancel
+          </button>
         </div>
       </div>
     </div>
@@ -354,45 +461,57 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
 function MyWork({ items }: { items: MyApplication[] }) {
   return (
     <>
-      <h2 className="text-2xl font-bold mb-4">My applications &amp; work</h2>
+      <h2 className="heading-title mb-6">My applications &amp; work</h2>
       <div className="grid gap-4">
         {items.map((app) => {
           const hired = app.status === "accepted" && app.onTeam;
           return (
-            <div key={app.id} className="card">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <Link to={`/jobs/${app.jobId}`} className="font-semibold text-lg hover:underline">
+            <div key={app.id} className="card p-6">
+              <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <Link to={`/jobs/${app.jobId}`} className="heading-card hover:text-accent transition-colors block">
                     {app.job?.title || "Job"}
                   </Link>
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    <span className={`badge ${hired ? "badge-verified" : app.status === "rejected" ? "bg-gray-100 text-gray-500" : "badge-pending"}`}>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <span className={hired ? "badge-verified" : app.status === "rejected" ? "badge-draft" : "badge-open"}>
                       {hired ? "hired" : app.status}
                     </span>
-                    {app.positionTitle && <span className="badge bg-brand-50 text-brand-700">{app.positionTitle}</span>}
+                    {app.positionTitle && <span className="badge-lavender">{app.positionTitle}</span>}
                     {app.job && <StatusBadge status={app.job.status} />}
-                    {app.job && <span className="badge bg-gray-100 text-gray-700">{budgetLabel(app.job)}</span>}
-                    {app.quoteAmount != null && <span className="badge bg-gray-100 text-gray-700">Your quote: ₹{app.quoteAmount.toLocaleString("en-IN")}</span>}
+                    {app.job && <span className="badge-budget">{budgetLabel(app.job)}</span>}
+                    {app.quoteAmount != null && (
+                      <span className="badge-skill">
+                        Your quote: ₹{app.quoteAmount.toLocaleString("en-IN")}
+                      </span>
+                    )}
                   </div>
                   {hired && app.milestones.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-1">
+                    <div className="mt-4 pt-3 border-t border-line flex flex-wrap gap-1.5">
                       {app.milestones.map((m) => (
-                        <span key={m.id} className="badge bg-gray-100 text-gray-600">
+                        <span key={m.id} className="badge-draft">
                           {m.status === "approved" ? "✓" : m.status === "submitted" ? "•" : "○"} {m.title}
                         </span>
                       ))}
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2">
-                  {hired && <Link to={`/chat/${app.jobId}`} className="btn-secondary">Chat</Link>}
-                  <Link to={`/jobs/${app.jobId}`} className="btn-primary">Open</Link>
+                <div className="flex gap-2 shrink-0 pt-1">
+                  {hired && (
+                    <Link to={`/chat/${app.jobId}`} className="btn-secondary">
+                      Chat
+                    </Link>
+                  )}
+                  <Link to={`/jobs/${app.jobId}`} className="btn-primary">
+                    Open
+                  </Link>
                 </div>
               </div>
             </div>
           );
         })}
-        {items.length === 0 && <div className="card text-center text-gray-500">You haven't applied to any jobs yet.</div>}
+        {items.length === 0 && (
+          <div className="empty-state">You haven't applied to any jobs yet.</div>
+        )}
       </div>
     </>
   );
@@ -414,22 +533,37 @@ function Messages({ rooms, onOpened }: { rooms: ChatRoomSummary[]; onOpened: () 
 
   return (
     <>
-      <h2 className="text-2xl font-bold mb-4">Messages</h2>
+      <h2 className="heading-title mb-6">Messages</h2>
       <div className="grid gap-3">
         {merged.map(({ room, unread, hasMentor }) => (
-          <Link key={room.jobId} to={`/chat/${room.jobId}`} onClick={onOpened} className="card flex items-center justify-between hover:shadow-md transition-shadow">
+          <Link
+            key={room.jobId}
+            to={`/chat/${room.jobId}`}
+            onClick={onOpened}
+            className="card-clickable flex items-center justify-between p-6"
+          >
             <div>
-              <p className="font-semibold">{room.title}</p>
-              <p className="text-sm text-gray-500">
-                {hasMentor && <span className="badge bg-brand-50 text-brand-700 mr-1">mentor room</span>}
-                team: {room.teamNames.join(", ") || "—"}{room.mentorName ? ` · mentor: ${room.mentorName}` : ""}
-                {" "}· <StatusBadge status={room.status} />
-              </p>
+              <p className="font-serif text-[18px] font-semibold text-ink">{room.title}</p>
+              <div className="text-sm text-muted mt-1 flex items-center gap-2 flex-wrap">
+                {hasMentor && <span className="badge-lavender">mentor room</span>}
+                <span>
+                  team: {room.teamNames.join(", ") || "—"}
+                  {room.mentorName ? ` · mentor: ${room.mentorName}` : ""}
+                </span>
+                <span>·</span>
+                <StatusBadge status={room.status} />
+              </div>
             </div>
-            {unread > 0 && <span className="rounded-full bg-brand-600 text-white text-xs font-semibold px-2 py-1">{unread} new</span>}
+            {unread > 0 && (
+              <span className="rounded-full bg-butter text-ink text-xs font-semibold px-2.5 py-1">
+                {unread} new
+              </span>
+            )}
           </Link>
         ))}
-        {merged.length === 0 && <div className="card text-center text-gray-500">No conversations yet. Chat opens once a job is awarded.</div>}
+        {merged.length === 0 && (
+          <div className="empty-state">No conversations yet. Chat opens once a job is awarded.</div>
+        )}
       </div>
     </>
   );
@@ -530,10 +664,11 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
-      <div className="card">
-        <h3 className="font-semibold text-lg mb-4">Talent profile</h3>
+      {/* Column 1: Talent profile */}
+      <div className="card p-6">
+        <h3 className="heading-card mb-4">Talent profile</h3>
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Phone</label>
               <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
@@ -555,7 +690,7 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
             <label className="label">Bio</label>
             <textarea className="input" rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
               <label className="label">LinkedIn</label>
               <input className="input" value={form.linkedin} onChange={(e) => setForm({ ...form, linkedin: e.target.value })} />
@@ -573,28 +708,31 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
           <div>
             <label className="label">Resume</label>
             <div className="flex items-center gap-3">
-              <label className="btn-secondary cursor-pointer">
-                <Upload className="w-4 h-4 mr-1" />
-                {uploading ? "Uploading..." : "Upload resume"}
+              <label className="btn-secondary cursor-pointer gap-1.5">
+                <Upload strokeWidth={1.5} className="w-4 h-4 text-ink" />
+                <span>{uploading ? "Uploading..." : "Upload resume"}</span>
                 <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={uploadResume} />
               </label>
-              {me?.profile?.resumeKey && <span className="text-sm text-gray-600">{me.profile.resumeName}</span>}
+              {me?.profile?.resumeKey && <span className="text-sm text-muted">{me.profile.resumeName}</span>}
             </div>
           </div>
 
-          <button onClick={saveProfile} className="btn-primary" disabled={saving}>{saving ? "Saving..." : "Save profile"}</button>
+          <button type="button" onClick={saveProfile} className="btn-primary w-full" disabled={saving}>
+            {saving ? "Saving..." : "Save profile"}
+          </button>
         </div>
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-lg mb-4">Business details</h3>
-        <p className="text-sm text-gray-500 mb-4">Add these when you want to post jobs as a business.</p>
+      {/* Column 2: Business details */}
+      <div className="card p-6">
+        <h3 className="heading-card mb-1">Business details</h3>
+        <p className="text-sm text-muted mb-4">Add these when you want to post jobs as a business.</p>
         <div className="space-y-4">
           <div>
             <label className="label">Business name</label>
             <input className="input" value={business.businessName} onChange={(e) => setBusiness({ ...business, businessName: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Sector</label>
               <input className="input" value={business.sector} onChange={(e) => setBusiness({ ...business, sector: e.target.value })} />
@@ -608,51 +746,70 @@ function ProfileTab({ onChanged, onError }: { onChanged: () => Promise<void> | v
             <label className="label">Udyam number</label>
             <input className="input" value={business.udyamNumber} onChange={(e) => setBusiness({ ...business, udyamNumber: e.target.value })} />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Verification:</span>
-            <span className={me?.business?.verificationStatus === "verified" ? "badge-verified" : "badge-pending"}>
-              {me?.business?.verificationStatus || "not added"}
-            </span>
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-sm text-muted">Verification:</span>
+            {me?.business?.verificationStatus === "verified" ? (
+              <VerifiedBadge label="verified" />
+            ) : (
+              <span className="badge-draft">
+                {me?.business?.verificationStatus || "not added"}
+              </span>
+            )}
           </div>
-          <button onClick={saveBusiness} className="btn-primary" disabled={saving || !business.businessName}>
+          <button
+            type="button"
+            onClick={saveBusiness}
+            className="btn-primary w-full"
+            disabled={saving || !business.businessName}
+          >
             {saving ? "Saving..." : "Save business details"}
           </button>
         </div>
       </div>
 
-      <div className="card">
-        <h3 className="font-semibold text-lg mb-4">My stats &amp; reviews</h3>
+      {/* Column 3: My stats & reviews */}
+      <div className="card p-6">
+        <h3 className="heading-card mb-4">My stats &amp; reviews</h3>
         {publicData ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-lg bg-gray-50 p-3">
-                <p className="text-xl font-bold">{publicData.stats.jobsPosted}</p>
-                <p className="text-xs text-gray-500">Jobs posted</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-3 gap-2.5 text-center">
+              <div className="stat-tile">
+                <p className="stat-num">{publicData.stats.jobsPosted}</p>
+                <p className="stat-label">Jobs posted</p>
               </div>
-              <div className="rounded-lg bg-gray-50 p-3">
-                <p className="text-xl font-bold">{publicData.stats.jobsCompleted}</p>
-                <p className="text-xs text-gray-500">Jobs done</p>
+              <div className="stat-tile">
+                <p className="stat-num">{publicData.stats.jobsCompleted}</p>
+                <p className="stat-label">Jobs done</p>
               </div>
-              <div className="rounded-lg bg-gray-50 p-3">
-                <p className="text-xl font-bold">{publicData.stats.reviewCount}</p>
-                <p className="text-xs text-gray-500">Reviews</p>
+              <div className="stat-tile">
+                <p className="stat-num">{publicData.stats.reviewCount}</p>
+                <p className="stat-label">Reviews</p>
               </div>
             </div>
-            <div><Stars value={publicData.stats.avgRating} /></div>
-            {publicData.reviews.length === 0 && <p className="text-sm text-gray-500">No reviews yet.</p>}
-            {publicData.reviews.slice(0, 5).map((r: JobReview) => (
-              <div key={r.id} className="rounded-lg bg-gray-50 p-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{r.reviewerName}</span>
-                  <Stars value={r.rating} />
+
+            <div className="py-1">
+              <Stars value={publicData.stats.avgRating} />
+            </div>
+
+            {publicData.reviews.length === 0 && (
+              <div className="empty-state">No reviews yet.</div>
+            )}
+
+            <div className="space-y-3">
+              {publicData.reviews.slice(0, 5).map((r: JobReview) => (
+                <div key={r.id} className="rounded-[8px] border border-line bg-surface p-3.5 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-ink">{r.reviewerName}</span>
+                    <Stars value={r.rating} />
+                  </div>
+                  {r.comment && <p className="text-sm text-muted mt-1 leading-relaxed">{r.comment}</p>}
+                  {r.jobTitle && <p className="text-xs text-muted/70 mt-1">on “{r.jobTitle}”</p>}
                 </div>
-                {r.comment && <p className="text-sm text-gray-600 mt-1">{r.comment}</p>}
-                {r.jobTitle && <p className="text-xs text-gray-400 mt-1">on “{r.jobTitle}”</p>}
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : (
-          <p className="text-sm text-gray-500">Loading...</p>
+          <p className="text-sm text-muted">Loading...</p>
         )}
       </div>
     </div>

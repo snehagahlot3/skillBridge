@@ -75,77 +75,125 @@ export default function MentorDashboard() {
     navigate("/");
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-brand-600">SkillBridge — Mentor Panel</h1>
+    <div className="min-h-screen bg-bg text-ink flex flex-col">
+      <header className="border-b border-line bg-surface sticky top-0 z-40">
+        <div className="mx-auto max-w-[1120px] w-full px-6 py-4 flex items-center justify-between">
+          <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
+            SkillBridge — Mentor Panel
+          </Link>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{user?.name}</span>
-            <button onClick={signOut} className="btn-ghost">Sign out</button>
+            <span className="text-sm text-muted">{user?.name}</span>
+            <button onClick={signOut} className="btn-ghost text-sm">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="flex gap-2 mb-6">
-          <button onClick={() => setTab("queue")} className={tab === "queue" ? "btn-primary" : "btn-secondary"}>
+      <main className="mx-auto max-w-[1120px] w-full px-6 py-8 flex-1">
+        <nav className="flex items-center gap-6 overflow-x-auto border-b border-line mb-8 pb-0 scrollbar-none whitespace-nowrap" aria-label="Mentor Navigation">
+          <button
+            type="button"
+            onClick={() => setTab("queue")}
+            className={`relative pb-3 pt-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm ${
+              tab === "queue"
+                ? "text-ink font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[3px] after:bg-butter"
+                : "text-muted hover:text-ink"
+            }`}
+          >
             Live jobs to mentor ({queue.length})
           </button>
-          <button onClick={() => setTab("mine")} className={tab === "mine" ? "btn-primary" : "btn-secondary"}>
+          <button
+            type="button"
+            onClick={() => setTab("mine")}
+            className={`relative pb-3 pt-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm ${
+              tab === "mine"
+                ? "text-ink font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[3px] after:bg-butter"
+                : "text-muted hover:text-ink"
+            }`}
+          >
             My jobs ({mine.length})
           </button>
-        </div>
+        </nav>
 
-        {toast && <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
+        {toast && (
+          <div className="mb-6 rounded-[8px] border border-line bg-surface p-4 text-sm text-ink border-l-4 border-l-accent">
+            {toast}
+          </div>
+        )}
 
         {tab === "queue" && (
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             {queue.map((job) => (
-              <div key={job.id} className="card flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="font-semibold">{job.title}</h3>
-                  <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 140)}{job.description.length > 140 ? "…" : ""}</p>
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
+              <div key={job.id} className="card p-6 flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <h3 className="heading-card">{job.title}</h3>
+                  <p className="text-sm text-muted mt-1 leading-relaxed">
+                    {job.description.slice(0, 140)}{job.description.length > 140 ? "…" : ""}
+                  </p>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
+                    <span className="badge-budget">{budgetLabel(job)}</span>
                     <StatusBadge status={job.status} />
-                    <span className="badge bg-gray-100 text-gray-700">Owner: {job.ownerName}</span>
-                    {job.teamNames?.length > 0 && <span className="badge bg-gray-100 text-gray-700">Team: {job.teamNames.map((t) => t.name).join(", ")}</span>}
-                    <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quotes</span>
+                    <span className="badge-skill">Owner: {job.ownerName}</span>
+                    {job.teamNames?.length > 0 && (
+                      <span className="badge-lavender">
+                        Team: {job.teamNames.map((t) => t.name).join(", ")}
+                      </span>
+                    )}
+                    <span className="badge-lavender">{job.applicationCount} quotes</span>
                   </div>
                 </div>
-                <button onClick={() => claim(job.id)} className="btn-primary shrink-0" disabled={busy}>
-                  Claim this job
-                </button>
+                <div className="shrink-0 pt-1">
+                  <button onClick={() => claim(job.id)} className="btn-primary shrink-0" disabled={busy}>
+                    Claim this job
+                  </button>
+                </div>
               </div>
             ))}
-            {queue.length === 0 && <div className="card text-center text-gray-500">No live jobs waiting for a mentor right now.</div>}
+            {queue.length === 0 && (
+              <div className="empty-state">No live jobs waiting for a mentor right now.</div>
+            )}
           </div>
         )}
 
         {tab === "mine" && (
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             {mine.map((job) => (
-              <div key={job.id} className="card flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="font-semibold">{job.title}</h3>
-                  <div className="flex gap-2 mt-2 flex-wrap">
+              <div key={job.id} className="card p-6 flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <h3 className="heading-card">{job.title}</h3>
+                  <div className="flex items-center gap-2 mt-3 flex-wrap">
                     <StatusBadge status={job.status} />
-                    <span className="badge bg-gray-100 text-gray-700">Owner: {job.ownerName}</span>
-                    {job.teamNames?.length > 0 && <span className="badge bg-gray-100 text-gray-700">Team: {job.teamNames.map((t) => t.name).join(", ")}</span>}
+                    <span className="badge-skill">Owner: {job.ownerName}</span>
+                    {job.teamNames?.length > 0 && (
+                      <span className="badge-lavender">
+                        Team: {job.teamNames.map((t) => t.name).join(", ")}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <Link to={`/chat/${job.id}`} className="btn-secondary"><MessageCircle className="w-4 h-4 mr-1" /> Group</Link>
-                  <Link to={`/chat/${job.id}?scope=mentor`} className="btn-secondary"><MessageCircle className="w-4 h-4 mr-1" /> Student chat</Link>
-                  <button onClick={() => openJob(job.id)} className="btn-primary">Progress</button>
-                  <button onClick={() => release(job.id)} className="btn-ghost" disabled={busy}>Free myself</button>
+                <div className="flex gap-2 shrink-0 pt-1 flex-wrap">
+                  <Link to={`/chat/${job.id}`} className="btn-secondary text-xs py-1.5 gap-1">
+                    <MessageCircle strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> Group
+                  </Link>
+                  <Link to={`/chat/${job.id}?scope=mentor`} className="btn-secondary text-xs py-1.5 gap-1">
+                    <MessageCircle strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> Student chat
+                  </Link>
+                  <button onClick={() => openJob(job.id)} className="btn-primary text-xs py-1.5">
+                    Progress
+                  </button>
+                  <button onClick={() => release(job.id)} className="btn-ghost text-xs py-1.5" disabled={busy}>
+                    Free myself
+                  </button>
                 </div>
               </div>
             ))}
-            {mine.length === 0 && <div className="card text-center text-gray-500">You aren't mentoring any jobs yet. Claim one from the queue!</div>}
+            {mine.length === 0 && (
+              <div className="empty-state">You aren't mentoring any jobs yet. Claim one from the queue!</div>
+            )}
           </div>
         )}
       </main>
@@ -193,63 +241,71 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
 
   return (
     <Modal title={job.title} onClose={onClose} wide>
-      <div className="space-y-5">
-        <div className="flex gap-2 flex-wrap">
+      <div className="space-y-6">
+        <div className="flex items-center gap-2 flex-wrap">
           <StatusBadge status={job.status} />
-          <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
-          <span className="badge bg-gray-100 text-gray-700">Owner: {job.ownerName}</span>
-          {job.teamNames?.length > 0 && <span className="badge bg-gray-100 text-gray-700">Team: {job.teamNames.map((t) => `${t.name} (${t.positionTitle})`).join(", ")}</span>}
+          <span className="badge-budget">{budgetLabel(job)}</span>
+          <span className="badge-skill">Owner: {job.ownerName}</span>
+          {job.teamNames?.length > 0 && (
+            <span className="badge-lavender">
+              Team: {job.teamNames.map((t) => `${t.name} (${t.positionTitle})`).join(", ")}
+            </span>
+          )}
         </div>
 
         <section>
-          <h4 className="font-semibold text-sm text-gray-700 mb-2">Milestones</h4>
-          <div className="space-y-2">
+          <h4 className="heading-card text-base mb-3">Milestones</h4>
+          <div className="space-y-2.5">
             {job.milestones.map((m) => (
-              <div key={m.id} className="flex items-center justify-between flex-wrap gap-2 rounded-lg bg-gray-50 p-3">
+              <div key={m.id} className="flex items-center justify-between flex-wrap gap-2 rounded-[8px] border border-line bg-bg/50 p-3.5">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={`w-2 h-2 rounded-full ${m.status === "approved" ? "bg-green-500" : m.status === "submitted" ? "bg-yellow-500" : "bg-gray-300"}`} />
-                  <span className="font-medium">{m.title}</span>
-                  <span className="badge bg-gray-100 text-gray-600">{m.status}</span>
+                  <span className={`w-2 h-2 rounded-full ${m.status === "approved" ? "bg-butter border border-ink" : m.status === "submitted" ? "bg-lavender" : "bg-line"}`} />
+                  <span className="font-medium text-ink">{m.title}</span>
+                  <span className="badge-draft text-xs">{m.status}</span>
                 </div>
                 {m.status === "submitted" && (
                   <div className="flex gap-2">
-                    <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.approveMilestone(m.id), "Milestone approved.")}>
+                    <button type="button" className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.approveMilestone(m.id), "Milestone approved.")}>
                       Approve
                     </button>
-                    <button className="btn-secondary text-xs py-1.5" onClick={() => { setRevising(m); setContent(""); }}>
+                    <button type="button" className="btn-secondary text-xs py-1.5" onClick={() => { setRevising(m); setContent(""); }}>
                       Request revision
                     </button>
                   </div>
                 )}
               </div>
             ))}
-            {job.milestones.length === 0 && <p className="text-sm text-gray-500">No milestones yet.</p>}
+            {job.milestones.length === 0 && <p className="text-sm text-muted">No milestones yet.</p>}
           </div>
         </section>
 
         <section>
-          <h4 className="font-semibold text-sm text-gray-700 mb-2">Progress timeline</h4>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
+          <h4 className="heading-card text-base mb-3">Progress timeline</h4>
+          <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
             {job.updates.map((u) => (
-              <div key={u.id} className="rounded-lg border border-gray-100 p-2">
-                <p className="text-xs text-gray-500">{u.authorName} · {u.authorRole} · {new Date(u.createdAt + "Z").toLocaleString()}</p>
-                <p className="text-sm text-gray-700 mt-0.5">{u.content}</p>
+              <div key={u.id} className="rounded-[8px] border border-line bg-surface p-3">
+                <p className="text-xs text-muted">{u.authorName} · {u.authorRole} · {new Date(u.createdAt + "Z").toLocaleString()}</p>
+                <p className="text-sm text-ink mt-1 leading-relaxed">{u.content}</p>
               </div>
             ))}
-            {job.updates.length === 0 && <p className="text-sm text-gray-500">No updates yet.</p>}
+            {job.updates.length === 0 && <p className="text-sm text-muted">No updates yet.</p>}
           </div>
-          <div className="flex gap-2 mt-3">
+          <div className="flex gap-2 mt-4 pt-2 border-t border-line">
             <input className="input" placeholder="Comment or guidance..." value={comment} onChange={(e) => setComment(e.target.value)} />
-            <button className="btn-primary shrink-0" disabled={busy || comment.trim().length < 1}
-              onClick={() => run(async () => { await api.postJobUpdate(job.id, comment.trim()); setComment(""); }, "Comment posted.")}>
+            <button
+              type="button"
+              className="btn-primary shrink-0"
+              disabled={busy || comment.trim().length < 1}
+              onClick={() => run(async () => { await api.postJobUpdate(job.id, comment.trim()); setComment(""); }, "Comment posted.")}
+            >
               Post
             </button>
           </div>
         </section>
 
-        <section className="flex items-center gap-3">
-          <Link to={`/chat/${job.id}`} className="btn-secondary">
-            <MessageCircle className="w-4 h-4 mr-1" /> Open chat (owner ↔ talent)
+        <section className="flex items-center gap-3 pt-3 border-t border-line">
+          <Link to={`/chat/${job.id}`} className="btn-secondary gap-1.5">
+            <MessageCircle strokeWidth={1.5} className="w-4 h-4 text-ink" /> Open chat (owner ↔ talent)
           </Link>
           <Link to={`/jobs/${job.id}`} className="btn-ghost">Full job page</Link>
         </section>
@@ -259,8 +315,12 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
         <Modal title={`Request revision — ${revising.title}`} onClose={() => setRevising(null)}>
           <label className="label">What needs to change?</label>
           <textarea className="input" rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
-          <button className="btn-primary mt-4" disabled={busy || content.trim().length < 5}
-            onClick={() => run(() => api.revisionMilestone(revising.id, content.trim()), "Revision requested.")}>
+          <button
+            type="button"
+            className="btn-primary mt-4"
+            disabled={busy || content.trim().length < 5}
+            onClick={() => run(() => api.revisionMilestone(revising.id, content.trim()), "Revision requested.")}
+          >
             Send
           </button>
         </Modal>

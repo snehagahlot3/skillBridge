@@ -4,18 +4,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          200: "#bfdbfe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
+        bg: "#F3F1F9",
+        surface: "#FFFFFF",
+        lavender: {
+          DEFAULT: "#C9C1E3",
+          subtle: "#ECE8F6",
         },
+        butter: "#F7E3A1",
+        ink: {
+          DEFAULT: "#2B2347",
+          hover: "#1E1735",
+        },
+        muted: "#5B5478",
+        accent: "#6B5FA0",
+        line: "#E3DEF2",
+      },
+      fontFamily: {
+        serif: ["var(--font-serif)"],
+        sans: ["var(--font-sans)"],
+      },
+      borderRadius: {
+        card: "12px",
+        btn: "8px",
+      },
+      maxWidth: {
+        content: "1120px",
       },
     },
   },

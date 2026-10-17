@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, type AdminBusinessRow, type AdminJobRow, type AdminMentorRow, type AdminStats, type AdminUserRow } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Modal, StatusBadge } from "../components/ui";
+import { Modal, StatusBadge, VerifiedBadge } from "../components/ui";
 
 type Tab = "overview" | "users" | "mentors" | "businesses" | "jobs";
 
@@ -63,7 +63,7 @@ export default function AdminDashboard() {
     navigate("/");
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted">Loading...</div>;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
@@ -74,44 +74,61 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-brand-600">SkillBridge — Admin</h1>
+    <div className="min-h-screen bg-bg text-ink flex flex-col">
+      <header className="border-b border-line bg-surface sticky top-0 z-40">
+        <div className="mx-auto max-w-[1120px] w-full px-6 py-4 flex items-center justify-between">
+          <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
+            SkillBridge — Admin
+          </Link>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-600">{user?.name}</span>
-            <button onClick={signOut} className="btn-ghost">Sign out</button>
+            <span className="text-sm text-muted">{user?.name}</span>
+            <button onClick={signOut} className="btn-ghost text-sm">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <div className="flex gap-2 mb-6 flex-wrap">
+      <main className="mx-auto max-w-[1120px] w-full px-6 py-8 flex-1">
+        <nav className="flex items-center gap-6 overflow-x-auto border-b border-line mb-8 pb-0 scrollbar-none whitespace-nowrap" aria-label="Admin Navigation">
           {tabs.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={tab === t.id ? "btn-primary" : "btn-secondary"}>
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`relative pb-3 pt-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm ${
+                tab === t.id
+                  ? "text-ink font-semibold after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[3px] after:bg-butter"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
               {t.label}
             </button>
           ))}
-        </div>
+        </nav>
 
-        {toast && <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
+        {toast && (
+          <div className="mb-6 rounded-[8px] border border-line bg-surface p-4 text-sm text-ink border-l-4 border-l-accent">
+            {toast}
+          </div>
+        )}
 
         {tab === "overview" && stats && <Overview stats={stats} />}
 
         {tab === "users" && (
-          <div className="grid gap-3">
+          <div className="grid gap-4">
             {users.map((u) => (
-              <div key={u.id} className="card flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="font-medium">
-                    {u.name} <span className="text-gray-500 text-sm">({u.email})</span>
+              <div key={u.id} className="card p-6 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-ink">
+                    {u.name} <span className="text-muted text-sm font-normal">({u.email})</span>
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-muted mt-0.5">
                     {u.college ? `${u.college} · ` : ""}{u.businessName ? `business: ${u.businessName} · ` : ""}{u.reviewCount} reviews
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={u.status === "active" ? "badge-verified" : "badge bg-red-100 text-red-800"}>{u.status}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={u.status === "active" ? "badge-verified" : "badge-draft"}>{u.status}</span>
                   {u.status === "active" ? (
                     <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminBlockUser(u.id), "User blocked.")}>
                       Block
@@ -121,12 +138,15 @@ export default function AdminDashboard() {
                       Unblock
                     </button>
                   )}
-                  <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+                  <button
+                    className="btn-ghost text-xs py-1.5 text-accent hover:text-ink"
+                    disabled={busy}
                     onClick={() => {
                       if (window.confirm(`Remove ${u.name}? Their account, applications and team memberships will be deleted and their jobs cancelled.`)) {
                         run(() => api.adminDeleteUser(u.id), "User removed.");
                       }
-                    }}>
+                    }}
+                  >
                     Remove
                   </button>
                 </div>
@@ -161,19 +181,19 @@ function Overview({ stats }: { stats: AdminStats }) {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {cards.map((c) => (
-          <div key={c.label} className="card text-center">
-            <p className="text-2xl font-bold text-brand-600">{c.value}</p>
-            <p className="text-xs text-gray-500 mt-1">{c.label}</p>
+          <div key={c.label} className="stat-tile">
+            <p className="stat-num">{c.value}</p>
+            <p className="stat-label">{c.label}</p>
           </div>
         ))}
       </div>
-      <div className="card">
-        <h3 className="font-semibold text-lg mb-4">Jobs by status</h3>
+      <div className="card p-6">
+        <h3 className="heading-card mb-4">Jobs by status</h3>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {Object.entries(stats.jobsByStatus).map(([status, count]) => (
-            <div key={status} className="rounded-lg bg-gray-50 p-3 text-center">
-              <p className="text-lg font-bold">{count}</p>
-              <p className="text-xs text-gray-500">{status.replace(/_/g, " ")}</p>
+            <div key={status} className="stat-tile bg-bg/70 border border-line">
+              <p className="font-serif text-[24px] font-semibold text-ink leading-tight">{count}</p>
+              <p className="stat-label">{status.replace(/_/g, " ")}</p>
             </div>
           ))}
         </div>
@@ -209,14 +229,16 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Mentors</h2>
+        <h2 className="heading-title text-xl">Mentors</h2>
         <button className="btn-primary" onClick={() => setCreating(true)}>Add mentor</button>
       </div>
 
       {creating && (
         <Modal title="Add mentor account" onClose={() => setCreating(false)}>
-          <p className="text-sm text-gray-500 mb-4">Mentors have no public signup — create their account here. Share the credentials with them.</p>
-          {formError && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
+          <p className="text-sm text-muted mb-4 leading-relaxed">
+            Mentors have no public signup — create their account here. Share the credentials with them.
+          </p>
+          {formError && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{formError}</div>}
           <div className="space-y-4">
             <div>
               <label className="label">Full name</label>
@@ -242,7 +264,7 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
               <label className="label">Short bio</label>
               <textarea className="input" rows={2} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
             </div>
-            <button className="btn-primary" disabled={busy || !form.name || !form.email || form.password.length < 8} onClick={create}>
+            <button className="btn-primary w-full" disabled={busy || !form.name || !form.email || form.password.length < 8} onClick={create}>
               Add mentor
             </button>
           </div>
@@ -251,15 +273,15 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
 
       <div className="grid gap-3">
         {mentors.map((m) => (
-          <div key={m.id} className="card flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <p className="font-medium">{m.name} <span className="text-gray-500 text-sm">({m.email})</span></p>
-              <p className="text-sm text-gray-500">
+          <div key={m.id} className="card p-6 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-ink">{m.name} <span className="text-muted text-sm font-normal">({m.email})</span></p>
+              <p className="text-sm text-muted mt-0.5">
                 {m.organization || "—"}{m.expertise.length > 0 && ` · ${m.expertise.join(", ")}`}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className={m.status === "active" ? "badge-verified" : "badge bg-red-100 text-red-800"}>{m.status}</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={m.status === "active" ? "badge-verified" : "badge-draft"}>{m.status}</span>
               {m.status === "active" ? (
                 <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminBlockMentor(m.id), "Mentor blocked.")}>
                   Block
@@ -269,12 +291,15 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
                   Unblock
                 </button>
               )}
-              <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+              <button
+                className="btn-ghost text-xs py-1.5 text-accent hover:text-ink"
+                disabled={busy}
                 onClick={() => {
                   if (window.confirm(`Remove mentor ${m.name}? Their account is deleted and their jobs are unassigned.`)) {
                     run(() => api.adminDeleteMentor(m.id), "Mentor removed.");
                   }
-                }}>
+                }}
+              >
                 Remove
               </button>
             </div>
@@ -312,13 +337,13 @@ function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold">Business owners</h2>
+        <h2 className="heading-title text-xl">Business owners</h2>
         <button className="btn-primary" onClick={() => setCreating(true)}>Add business owner</button>
       </div>
 
       {creating && (
         <Modal title="Add business owner" onClose={() => setCreating(false)}>
-          {formError && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
+          {formError && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{formError}</div>}
           <div className="space-y-4">
             <div>
               <label className="label">Contact name</label>
@@ -346,7 +371,7 @@ function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow
                 <input className="input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
               </div>
             </div>
-            <button className="btn-primary" disabled={busy || !form.name || !form.email || form.password.length < 8 || !form.businessName} onClick={create}>
+            <button className="btn-primary w-full" disabled={busy || !form.name || !form.email || form.password.length < 8 || !form.businessName} onClick={create}>
               Add business owner
             </button>
           </div>
@@ -355,24 +380,31 @@ function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow
 
       <div className="grid gap-3">
         {businesses.map((b) => (
-          <div key={b.userId} className="card flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <p className="font-medium">{b.businessName} <span className="text-gray-500 text-sm">({b.name} · {b.email})</span></p>
-              <p className="text-sm text-gray-500">{b.city} · {b.sector}</p>
+          <div key={b.userId} className="card p-6 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-ink">{b.businessName} <span className="text-muted text-sm font-normal">({b.name} · {b.email})</span></p>
+              <p className="text-sm text-muted mt-0.5">{b.city} · {b.sector}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className={b.verificationStatus === "verified" ? "badge-verified" : "badge-pending"}>{b.verificationStatus}</span>
+            <div className="flex items-center gap-3 shrink-0">
+              {b.verificationStatus === "verified" ? (
+                <VerifiedBadge label={b.verificationStatus} />
+              ) : (
+                <span className="badge-draft">{b.verificationStatus}</span>
+              )}
               {b.verificationStatus !== "verified" && (
                 <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminVerifyBusiness(b.userId), "Business verified.")}>
                   Verify
                 </button>
               )}
-              <button className="btn-ghost text-xs py-1.5 text-red-600" disabled={busy}
+              <button
+                className="btn-ghost text-xs py-1.5 text-accent hover:text-ink"
+                disabled={busy}
                 onClick={() => {
                   if (window.confirm(`Remove business owner ${b.name}? Their account is deleted and their jobs cancelled.`)) {
                     run(() => api.adminDeleteUser(b.userId), "Business owner removed.");
                   }
-                }}>
+                }}
+              >
                 Remove
               </button>
             </div>
@@ -392,17 +424,20 @@ function JobsTab({ jobs, mentors, busy, run }: {
   const activeMentors = mentors.filter((m) => m.status === "active");
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-4">
       {jobs.map((j) => (
-        <div key={j.id} className="card">
-          <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div key={j.id} className="card p-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
             <div>
-              <p className="font-medium">{j.title}</p>
-              <p className="text-sm text-gray-500">
-                Owner: {j.owner?.name || "—"} · status: <StatusBadge status={j.status} />
-              </p>
+              <p className="font-semibold text-ink text-base">{j.title}</p>
+              <div className="text-sm text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                <span>Owner: {j.owner?.name || "—"}</span>
+                <span>·</span>
+                <span>status:</span>
+                <StatusBadge status={j.status} />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {j.status === "delisted" ? (
                 <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminRelistJob(j.id), "Job relisted.")}>
                   Relist
@@ -415,12 +450,12 @@ function JobsTab({ jobs, mentors, busy, run }: {
             </div>
           </div>
 
-          <div className="mt-3 grid md:grid-cols-2 gap-3">
-            <div className="rounded-lg bg-gray-50 p-3">
-              <p className="text-sm font-medium text-gray-700 mb-2">Mentor</p>
+          <div className="mt-4 pt-4 border-t border-line grid md:grid-cols-2 gap-4">
+            <div className="rounded-[8px] border border-line bg-bg/50 p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">Mentor</p>
               <div className="flex items-center gap-2">
                 <select
-                  className="input"
+                  className="input text-xs"
                   value={j.mentor?.id || ""}
                   onChange={(e) =>
                     run(
@@ -437,15 +472,15 @@ function JobsTab({ jobs, mentors, busy, run }: {
               </div>
             </div>
 
-            <div className="rounded-lg bg-gray-50 p-3">
-              <p className="text-sm font-medium text-gray-700 mb-2">Team ({j.teamSize})</p>
-              {j.team.length === 0 && <p className="text-sm text-gray-500">No one hired yet.</p>}
+            <div className="rounded-[8px] border border-line bg-bg/50 p-3.5">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">Team ({j.teamSize})</p>
+              {j.team.length === 0 && <p className="text-xs text-muted">No one hired yet.</p>}
               <div className="space-y-1.5">
                 {j.team.map((t) => (
-                  <div key={t.userId} className="flex items-center justify-between text-sm">
-                    <span>{t.name} <span className="text-gray-500">— {t.positionTitle}</span></span>
+                  <div key={t.userId} className="flex items-center justify-between text-xs">
+                    <span className="text-ink font-medium">{t.name} <span className="text-muted font-normal">— {t.positionTitle}</span></span>
                     <button
-                      className="text-red-600 text-xs hover:underline"
+                      className="text-accent hover:text-ink hover:underline text-xs"
                       disabled={busy}
                       onClick={() => {
                         if (window.confirm(`Free ${t.name} from this job? The job goes back to public listings if the team is no longer complete.`)) {

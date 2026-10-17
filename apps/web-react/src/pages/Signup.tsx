@@ -34,13 +34,20 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8">
-      <div className="card w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-1">Create your account</h1>
-        <p className="text-sm text-gray-500 mb-6">
+    <div className="min-h-screen bg-bg text-ink flex flex-col items-center justify-center px-4 py-12">
+      <Link to="/" className="font-serif text-[26px] font-semibold text-ink tracking-tight mb-8 hover:opacity-95">
+        SkillBridge
+      </Link>
+      <div className="card w-full max-w-md p-8">
+        <h1 className="heading-title mb-1">Create your account</h1>
+        <p className="text-sm text-muted mb-6 leading-relaxed">
           One account lets you post jobs <em>and</em> work on jobs. Mentor accounts are created by admins.
         </p>
-        {error && <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">
+            {error}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Full name</label>
@@ -66,8 +73,8 @@ export default function Signup() {
             {loading ? "Creating account..." : "Create account"}
           </button>
         </form>
-        <p className="mt-4 text-sm text-center text-gray-600">
-          Already have an account? <Link to="/login" className="text-brand-600 hover:underline">Sign in</Link>
+        <p className="mt-6 text-sm text-center text-muted">
+          Already have an account? <Link to="/login" className="text-accent hover:underline font-medium">Sign in</Link>
         </p>
       </div>
     </div>

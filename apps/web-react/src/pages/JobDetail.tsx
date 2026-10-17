@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { FileText, Github, Globe, Linkedin, MessageCircle, Sparkles } from "lucide-react";
+import { FileText, Github, Globe, Linkedin, MessageCircle } from "lucide-react";
 import {
   api,
   budgetLabel,
@@ -12,7 +12,7 @@ import {
   type TeamMember,
 } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
-import { Modal, RatingInput, Stars, StatusBadge } from "../components/ui";
+import { Modal, RatingInput, Stars, StatusBadge, VerifiedBadge } from "../components/ui";
 import Assistant from "../components/Assistant";
 
 export default function JobDetail() {
@@ -64,8 +64,8 @@ export default function JobDetail() {
     }
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (!job) return <div className="p-8">Job not found.</div>;
+  if (loading) return <div className="p-8 text-center text-muted">Loading...</div>;
+  if (!job) return <div className="p-8 text-center text-muted">Job not found.</div>;
 
   const isOwner = job.myRole === "owner";
   const isTeam = job.myRole === "team";
@@ -75,76 +75,96 @@ export default function JobDetail() {
   const fill = (p: JobPosition) => team.filter((t) => t.positionId === p.id).length;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-4xl px-4 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-brand-600">SkillBridge</h1>
-          <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-bg text-ink flex flex-col">
+      <header className="border-b border-line bg-surface sticky top-0 z-40">
+        <div className="mx-auto max-w-[1120px] px-6 py-4 flex items-center justify-between">
+          <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
+            SkillBridge
+          </Link>
+          <div className="flex items-center gap-3">
             {isParticipant && (
-              <Link to={`/chat/${job.id}`} className="btn-secondary text-sm">
-                <MessageCircle className="w-4 h-4 mr-1" /> Group chat
+              <Link to={`/chat/${job.id}`} className="btn-secondary text-sm gap-1.5">
+                <MessageCircle strokeWidth={1.5} className="w-4 h-4 text-ink" />
+                <span>Group chat</span>
               </Link>
             )}
             {!isOwner && !isMentor && (
               <button onClick={() => setAiOpen(true)} className="btn-secondary text-sm">
-                <Sparkles className="w-4 h-4 mr-1" /> AI help
+                AI help
               </button>
             )}
-            <button onClick={() => navigate(-1)} className="btn-ghost">Back</button>
+            <button onClick={() => navigate(-1)} className="btn-ghost text-sm">
+              Back
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl px-4 py-8 space-y-6">
-        {toast && <div className="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
+      <main className="mx-auto max-w-[1120px] px-6 py-8 space-y-6 flex-1 w-full">
+        {toast && (
+          <div className="rounded-[8px] border border-line bg-surface p-4 text-sm text-ink border-l-4 border-l-accent">
+            {toast}
+          </div>
+        )}
 
-        <div className="card">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold">{job.title}</h2>
-              <p className="text-gray-600 mt-2">{job.description}</p>
+        <div className="card p-6">
+          <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+            <div className="flex-1 min-w-0">
+              <h1 className="heading-title">{job.title}</h1>
+              <p className="text-sm text-muted mt-2 leading-relaxed">{job.description}</p>
             </div>
-            <StatusBadge status={job.status} />
+            <div className="shrink-0 pt-1">
+              <StatusBadge status={job.status} />
+            </div>
           </div>
 
-          <div className="flex gap-2 mt-4 flex-wrap">
-            <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
-            <span className="badge bg-gray-100 text-gray-700">{job.category}</span>
-            {job.deadline && <span className="badge bg-gray-100 text-gray-700">Due {job.deadline}</span>}
+          <div className="flex items-center gap-2 mt-4 flex-wrap">
+            <span className="badge-budget">{budgetLabel(job)}</span>
+            <span className="badge-skill">{job.category}</span>
+            {job.deadline && <span className="badge-skill">Due {job.deadline}</span>}
             {job.status === "open" && job.applicationCount != null && (
-              <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quote{job.applicationCount === 1 ? "" : "s"}</span>
+              <span className="badge-lavender">
+                {job.applicationCount} quote{job.applicationCount === 1 ? "" : "s"}
+              </span>
             )}
           </div>
 
           {job.owner && (
-            <div className="mt-4 flex items-center gap-3 text-sm">
-              <span className="text-gray-500">Posted by</span>
-              <Link to={`/users/${job.owner.id}`} className="font-medium text-brand-600 hover:underline">
+            <div className="mt-4 pt-4 border-t border-line flex items-center gap-2 text-sm flex-wrap">
+              <span className="text-muted">Posted by</span>
+              <Link to={`/users/${job.owner.id}`} className="font-semibold text-accent hover:underline">
                 {job.owner.businessName || job.owner.name}
               </Link>
-              {job.owner.verificationStatus === "verified" && <span className="badge-verified">Verified business</span>}
+              {job.owner.verificationStatus === "verified" && (
+                <VerifiedBadge label="Verified business" />
+              )}
             </div>
           )}
 
           {job.mentor && (
-            <div className="mt-2 text-sm text-gray-600">
-              Mentor: <span className="font-medium">{job.mentor.name}</span>
+            <div className="mt-2 text-sm text-muted">
+              Mentor: <span className="font-semibold text-ink">{job.mentor.name}</span>
             </div>
           )}
 
           {job.positions?.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Team needed</p>
-              <div className="space-y-1.5">
+            <div className="mt-5 pt-4 border-t border-line">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">Team needed</p>
+              <div className="space-y-2">
                 {job.positions.map((p) => {
                   const filled = fill(p);
                   return (
-                    <div key={p.id} className="flex items-center gap-2 text-sm">
-                      <span className="w-44 shrink-0 text-gray-700">{p.title}</span>
-                      <div className="flex-1 h-2 rounded bg-gray-100 overflow-hidden">
-                        <div className="h-2 rounded bg-brand-500" style={{ width: `${(filled / p.count) * 100}%` }} />
+                    <div key={p.id} className="flex items-center gap-3 text-sm">
+                      <span className="w-44 shrink-0 font-medium text-ink">{p.title}</span>
+                      <div className="flex-1 h-2 rounded-full bg-line overflow-hidden">
+                        <div
+                          className="h-2 rounded-full bg-ink transition-all duration-300"
+                          style={{ width: `${(filled / p.count) * 100}%` }}
+                        />
                       </div>
-                      <span className="text-gray-500 w-24 text-right">{filled}/{p.count} hired</span>
+                      <span className="text-xs text-muted w-24 text-right font-mono tabular-nums">
+                        {filled}/{p.count} hired
+                      </span>
                     </div>
                   );
                 })}
@@ -153,30 +173,34 @@ export default function JobDetail() {
           )}
 
           {job.requiredSkills?.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm font-medium text-gray-700 mb-2">Required skills</p>
-              <div className="flex flex-wrap gap-1">
+            <div className="mt-5 pt-4 border-t border-line">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">Required skills</p>
+              <div className="flex flex-wrap gap-1.5">
                 {job.requiredSkills.map((skill) => (
-                  <span key={skill} className="badge bg-gray-100 text-gray-700">{skill}</span>
+                  <span key={skill} className="badge-skill">
+                    {skill}
+                  </span>
                 ))}
               </div>
             </div>
           )}
 
           {job.acceptanceCriteria && (
-            <div className="mt-4 rounded-lg bg-gray-50 p-3 text-sm">
-              <p className="font-medium text-gray-700 mb-1">Acceptance criteria</p>
-              <p className="text-gray-600">{job.acceptanceCriteria}</p>
+            <div className="mt-5 pt-4 border-t border-line">
+              <div className="rounded-[8px] bg-bg/70 border border-line p-4 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-1">Acceptance criteria</p>
+                <p className="text-muted leading-relaxed">{job.acceptanceCriteria}</p>
+              </div>
             </div>
           )}
         </div>
 
         {team.length > 0 && (
-          <div className="card">
-            <h3 className="font-semibold text-lg mb-4">Team</h3>
+          <div className="card p-6">
+            <h3 className="heading-card mb-4">Team</h3>
             <div className="flex flex-wrap gap-2">
               {team.map((m) => (
-                <Link key={m.id} to={`/users/${m.userId}`} className="badge bg-brand-50 text-brand-700 hover:underline">
+                <Link key={m.id} to={`/users/${m.userId}`} className="badge-lavender hover:opacity-90">
                   {m.name} — {m.positionTitle}
                 </Link>
               ))}
@@ -263,35 +287,39 @@ function ProposalBox({ job, meId, onChanged }: { job: Job; meId?: string; onChan
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-1">Proposal submitted</h3>
-      <p className="text-xs text-gray-500 mb-4">You can view or update it while the job is still open.</p>
+    <div className="card p-6">
+      <h3 className="heading-card mb-1">Proposal submitted</h3>
+      <p className="text-xs text-muted mb-4">You can view or update it while the job is still open.</p>
       <div className="space-y-3">
         {myApps.map((a) => (
-          <div key={a.id} className="rounded-lg border border-gray-200 p-3">
+          <div key={a.id} className="rounded-[8px] border border-line bg-surface p-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <span className="font-medium">{a.positionTitle || "Position"}</span>
-                <span className={`badge ${a.status === "pending" ? "badge-pending" : a.status === "accepted" ? "badge-verified" : "bg-gray-100 text-gray-500"}`}>{a.status}</span>
+                <span className="font-semibold text-ink">{a.positionTitle || "Position"}</span>
+                <span className={a.status === "pending" ? "badge-open" : a.status === "accepted" ? "badge-verified" : "badge-draft"}>
+                  {a.status}
+                </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="badge bg-brand-50 text-brand-700 font-semibold">₹{a.quoteAmount?.toLocaleString("en-IN")}</span>
-                <button className="btn-secondary text-xs py-1.5" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
+                <span className="badge-budget">₹{a.quoteAmount?.toLocaleString("en-IN")}</span>
+                <button type="button" className="btn-secondary text-xs py-1.5" onClick={() => setExpanded(expanded === a.id ? null : a.id)}>
                   {expanded === a.id ? "Hide" : "View proposal"}
                 </button>
                 {a.status === "pending" && (
-                  <button className="btn-primary text-xs py-1.5" onClick={() => startEdit(a)}>Edit</button>
+                  <button type="button" className="btn-primary text-xs py-1.5" onClick={() => startEdit(a)}>
+                    Edit
+                  </button>
                 )}
               </div>
             </div>
-            {expanded === a.id && <p className="text-sm text-gray-600 mt-2">{a.pitch}</p>}
+            {expanded === a.id && <p className="text-sm text-muted mt-3 leading-relaxed border-t border-line pt-2">{a.pitch}</p>}
           </div>
         ))}
       </div>
 
       {editing && (
         <Modal title={`Edit proposal — ${editing.positionTitle || "Position"}`} onClose={() => setEditing(null)}>
-          {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          {error && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{error}</div>}
           <div className="space-y-4">
             <div>
               <label className="label">Your quote (₹)</label>
@@ -301,7 +329,9 @@ function ProposalBox({ job, meId, onChanged }: { job: Job; meId?: string; onChan
               <label className="label">Your brief / ideas for the job</label>
               <textarea className="input" rows={4} value={pitch} onChange={(e) => setPitch(e.target.value)} />
             </div>
-            <button className="btn-primary" disabled={busy} onClick={saveEdit}>{busy ? "Saving..." : "Save changes"}</button>
+            <button type="button" className="btn-primary" disabled={busy} onClick={saveEdit}>
+              {busy ? "Saving..." : "Save changes"}
+            </button>
           </div>
         </Modal>
       )}
@@ -339,9 +369,9 @@ function QuoteBox({ job, team, onDone }: { job: Job; team: TeamMember[]; onDone:
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-4">Submit your quote</h3>
-      {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+    <div className="card p-6">
+      <h3 className="heading-card mb-4">Submit your quote</h3>
+      {error && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{error}</div>}
       <div className="space-y-4">
         <div>
           <label className="label">Position you're applying for</label>
@@ -362,10 +392,17 @@ function QuoteBox({ job, team, onDone }: { job: Job; team: TeamMember[]; onDone:
         </div>
         <div>
           <label className="label">Your brief / ideas for the job</label>
-          <textarea className="input" rows={4} placeholder="How you'd approach the job, relevant experience, timeline..."
-            value={pitch} onChange={(e) => setPitch(e.target.value)} />
+          <textarea
+            className="input"
+            rows={4}
+            placeholder="How you'd approach the job, relevant experience, timeline..."
+            value={pitch}
+            onChange={(e) => setPitch(e.target.value)}
+          />
         </div>
-        <button onClick={submit} className="btn-primary" disabled={busy}>{busy ? "Submitting..." : "Submit quote"}</button>
+        <button type="button" onClick={submit} className="btn-primary" disabled={busy}>
+          {busy ? "Submitting..." : "Submit quote"}
+        </button>
       </div>
     </div>
   );
@@ -403,52 +440,76 @@ function QuotesSection({ job, team, onChanged, onError }: {
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-4">Quotes by position</h3>
-      <div className="space-y-5">
+    <div className="card p-6">
+      <h3 className="heading-card mb-4">Quotes by position</h3>
+      <div className="space-y-6">
         {job.positions.map((p) => {
           const apps = byPosition.get(p.id) ?? [];
           const filled = team.filter((t) => t.positionId === p.id).length;
           if (apps.length === 0) return null;
           return (
             <div key={p.id}>
-              <p className="text-sm font-semibold text-gray-700 mb-2">
-                {p.title} <span className="font-normal text-gray-500">({filled}/{p.count} hired)</span>
+              <p className="text-sm font-semibold text-ink mb-2">
+                {p.title} <span className="font-normal text-muted">({filled}/{p.count} hired)</span>
               </p>
               <div className="space-y-3">
                 {apps.map((a) => {
                   const applicant = a.applicant;
                   return (
-                    <div key={a.id} className="rounded-lg border border-gray-200 p-3">
+                    <div key={a.id} className="rounded-[8px] border border-line bg-surface p-4">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
-                          <Link to={`/users/${a.applicantId}`} className="font-medium hover:underline">{applicant?.name}</Link>
+                          <Link to={`/users/${a.applicantId}`} className="font-semibold text-accent hover:underline">
+                            {applicant?.name}
+                          </Link>
                           <Stars value={applicant?.avgRating ?? null} />
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="badge bg-brand-50 text-brand-700 font-semibold">₹{a.quoteAmount?.toLocaleString("en-IN")}</span>
-                          <span className={`badge ${a.status === "accepted" ? "badge-verified" : a.status === "rejected" ? "bg-gray-100 text-gray-500" : "badge-pending"}`}>{a.status}</span>
+                          <span className="badge-budget">₹{a.quoteAmount?.toLocaleString("en-IN")}</span>
+                          <span className={a.status === "accepted" ? "badge-verified" : a.status === "rejected" ? "badge-draft" : "badge-open"}>
+                            {a.status}
+                          </span>
                         </div>
                       </div>
-                      {applicant?.college && <p className="text-sm text-gray-500 mt-1">{applicant.college}{applicant.city ? ` · ${applicant.city}` : ""}</p>}
-                      <p className="text-sm text-gray-600 mt-2">{a.pitch}</p>
+                      {applicant?.college && (
+                        <p className="text-xs text-muted mt-1">
+                          {applicant.college}{applicant.city ? ` · ${applicant.city}` : ""}
+                        </p>
+                      )}
+                      <p className="text-sm text-muted mt-2 leading-relaxed">{a.pitch}</p>
                       {applicant && applicant.skills.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {applicant.skills.slice(0, 6).map((s) => <span key={s} className="badge bg-gray-100 text-gray-700">{s}</span>)}
+                        <div className="flex flex-wrap gap-1.5 mt-2.5">
+                          {applicant.skills.slice(0, 6).map((s) => (
+                            <span key={s} className="badge-skill">
+                              {s}
+                            </span>
+                          ))}
                         </div>
                       )}
                       {applicant && (
-                        <div className="flex items-center gap-3 mt-2">
-                          {applicant.linkedin && <a href={applicant.linkedin} target="_blank" rel="noreferrer" className="text-brand-600" title="LinkedIn"><Linkedin className="w-4 h-4" /></a>}
-                          {applicant.github && <a href={applicant.github} target="_blank" rel="noreferrer" className="text-gray-700" title="GitHub"><Github className="w-4 h-4" /></a>}
-                          {applicant.portfolio && <a href={applicant.portfolio} target="_blank" rel="noreferrer" className="text-gray-700" title="Portfolio"><Globe className="w-4 h-4" /></a>}
+                        <div className="flex items-center gap-3 mt-3 pt-2 border-t border-line flex-wrap">
+                          {applicant.linkedin && (
+                            <a href={applicant.linkedin} target="_blank" rel="noreferrer" className="text-xs text-accent hover:underline inline-flex items-center gap-1" title="LinkedIn">
+                              <Linkedin strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> LinkedIn
+                            </a>
+                          )}
+                          {applicant.github && (
+                            <a href={applicant.github} target="_blank" rel="noreferrer" className="text-xs text-muted hover:text-ink inline-flex items-center gap-1" title="GitHub">
+                              <Github strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> GitHub
+                            </a>
+                          )}
+                          {applicant.portfolio && (
+                            <a href={applicant.portfolio} target="_blank" rel="noreferrer" className="text-xs text-muted hover:text-ink inline-flex items-center gap-1" title="Portfolio">
+                              <Globe strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> Portfolio
+                            </a>
+                          )}
                           {applicant.resumeKey && (
-                            <button onClick={() => api.downloadResume(applicant.id)} className="text-sm text-brand-600 hover:underline inline-flex items-center gap-1">
-                              <FileText className="w-4 h-4" /> Resume
+                            <button type="button" onClick={() => api.downloadResume(applicant.id)} className="text-xs text-accent hover:underline inline-flex items-center gap-1">
+                              <FileText strokeWidth={1.5} className="w-3.5 h-3.5 text-ink" /> Resume
                             </button>
                           )}
                           {isOwner && job.status === "open" && a.status === "pending" && filled < p.count && (
-                            <button onClick={() => accept(a)} className="btn-primary ml-auto text-sm py-1.5" disabled={busy}>
+                            <button type="button" onClick={() => accept(a)} className="btn-primary ml-auto text-xs py-1.5" disabled={busy}>
                               Hire
                             </button>
                           )}
@@ -475,45 +536,45 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
   if (!role) return null;
 
   return (
-    <div className="card">
-      <div className="flex flex-wrap gap-2">
+    <div className="card p-6">
+      <div className="flex flex-wrap gap-2.5">
         {role === "owner" && job.status === "draft" && (
-          <button className="btn-primary" disabled={busy} onClick={() => onAct(() => api.publishJob(job.id), "Job published — it's now open for quotes.")}>
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => onAct(() => api.publishJob(job.id), "Job published — it's now open for quotes.")}>
             Publish job
           </button>
         )}
         {role === "owner" && ["draft", "open", "awarded"].includes(job.status) && (
-          <button className="btn-ghost" disabled={busy} onClick={() => onAct(() => api.cancelJob(job.id), "Job cancelled.")}>
+          <button type="button" className="btn-ghost" disabled={busy} onClick={() => onAct(() => api.cancelJob(job.id), "Job cancelled.")}>
             Cancel job
           </button>
         )}
         {role === "owner" && ["draft", "open"].includes(job.status) && (
-          <button className="btn-secondary" disabled={busy} onClick={() => setModal("edit")}>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => setModal("edit")}>
             Edit details
           </button>
         )}
         {role === "team" && job.status === "in_progress" && (
-          <button className="btn-primary" disabled={busy} onClick={() => setModal("deliver")}>
+          <button type="button" className="btn-primary" disabled={busy} onClick={() => setModal("deliver")}>
             Deliver final work
           </button>
         )}
         {role === "owner" && job.status === "delivered" && (
           <>
-            <button className="btn-primary" disabled={busy} onClick={() => onAct(() => api.acceptJob(job.id), "Delivery accepted — job completed! Leave reviews.")}>
+            <button type="button" className="btn-primary" disabled={busy} onClick={() => onAct(() => api.acceptJob(job.id), "Delivery accepted — job completed! Leave reviews.")}>
               Accept delivery
             </button>
-            <button className="btn-secondary" disabled={busy} onClick={() => setModal("revision")}>
+            <button type="button" className="btn-secondary" disabled={busy} onClick={() => setModal("revision")}>
               Request revision
             </button>
           </>
         )}
         {["owner", "team"].includes(role) && job.status === "delivered" && (
-          <button className="btn-ghost" disabled={busy} onClick={() => setModal("dispute")}>
+          <button type="button" className="btn-ghost" disabled={busy} onClick={() => setModal("dispute")}>
             Raise dispute
           </button>
         )}
         {role === "owner" && ["draft", "open", "awarded"].includes(job.status) && (
-          <button className="btn-secondary" disabled={busy} onClick={() => setModal("milestones")}>
+          <button type="button" className="btn-secondary" disabled={busy} onClick={() => setModal("milestones")}>
             Add milestones
           </button>
         )}
@@ -523,10 +584,16 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
         <Modal title={modal === "deliver" ? "Deliver final work" : modal === "revision" ? "Request revision" : modal === "dispute" ? "Raise dispute" : "Add milestones"} onClose={() => setModal(null)}>
           {modal === "milestones" ? (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">One milestone per line, format: "Title (due YYYY-MM-DD)"</p>
-              <textarea className="input" rows={4} placeholder={"Logo concept (due 2026-11-01)\nFinal design (due 2026-11-10)"}
-                value={milestoneTitles} onChange={(e) => setMilestoneTitles(e.target.value)} />
+              <p className="text-sm text-muted">One milestone per line, format: "Title (due YYYY-MM-DD)"</p>
+              <textarea
+                className="input"
+                rows={4}
+                placeholder={"Logo concept (due 2026-11-01)\nFinal design (due 2026-11-10)"}
+                value={milestoneTitles}
+                onChange={(e) => setMilestoneTitles(e.target.value)}
+              />
               <button
+                type="button"
                 className="btn-primary"
                 disabled={busy}
                 onClick={() => {
@@ -548,6 +615,7 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
               <label className="label">{modal === "deliver" ? "Delivery notes" : "Describe the issue"}</label>
               <textarea className="input" rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
               <button
+                type="button"
                 className="btn-primary"
                 disabled={busy || content.trim().length < 5}
                 onClick={() => {
@@ -613,7 +681,7 @@ function EditJobModal({ job, onClose, onSaved }: { job: Job; onClose: () => void
 
   return (
     <Modal title="Edit job details" onClose={onClose} wide>
-      {error && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{error}</div>}
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -651,11 +719,13 @@ function EditJobModal({ job, onClose, onSaved }: { job: Job; onClose: () => void
           <label className="label">Acceptance criteria</label>
           <textarea className="input" rows={2} value={form.acceptanceCriteria} onChange={(e) => setForm({ ...form, acceptanceCriteria: e.target.value })} />
         </div>
-        <div className="flex gap-2">
-          <button className="btn-primary" disabled={busy || !form.title || !form.description || !form.category} onClick={save}>
+        <div className="flex gap-2.5 pt-2">
+          <button type="button" className="btn-primary" disabled={busy || !form.title || !form.description || !form.category} onClick={save}>
             {busy ? "Saving..." : "Save changes"}
           </button>
-          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
         </div>
       </div>
     </Modal>
@@ -695,30 +765,30 @@ function MilestonesSection({ job, isOwner, isTeam, isMentor, onChanged, onError 
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-4">Milestones</h3>
-      {milestones.length === 0 && <p className="text-sm text-gray-500">No milestones yet. The owner can add them.</p>}
-      <div className="space-y-2">
+    <div className="card p-6">
+      <h3 className="heading-card mb-4">Milestones</h3>
+      {milestones.length === 0 && <p className="text-sm text-muted">No milestones yet. The owner can add them.</p>}
+      <div className="space-y-2.5">
         {milestones.map((m) => (
-          <div key={m.id} className="flex items-center justify-between flex-wrap gap-2 rounded-lg bg-gray-50 p-3">
+          <div key={m.id} className="flex items-center justify-between flex-wrap gap-2 rounded-[8px] border border-line bg-bg/50 p-3.5">
             <div className="flex items-center gap-2 text-sm">
-              <span className={`w-2 h-2 rounded-full ${m.status === "approved" ? "bg-green-500" : m.status === "submitted" ? "bg-yellow-500" : "bg-gray-300"}`} />
-              <span className="font-medium">{m.title}</span>
-              {m.dueDate && <span className="text-gray-500">— due {m.dueDate}</span>}
-              <span className="badge bg-gray-100 text-gray-600">{m.status}</span>
+              <span className={`w-2 h-2 rounded-full ${m.status === "approved" ? "bg-butter border border-ink" : m.status === "submitted" ? "bg-lavender" : "bg-line"}`} />
+              <span className="font-medium text-ink">{m.title}</span>
+              {m.dueDate && <span className="text-muted text-xs">— due {m.dueDate}</span>}
+              <span className="badge-draft text-xs">{m.status}</span>
             </div>
             <div className="flex gap-2">
               {isTeam && m.status !== "approved" && (
-                <button className="btn-secondary text-xs py-1.5" onClick={() => { setSubmitting(m); setContent(""); }}>
+                <button type="button" className="btn-secondary text-xs py-1.5" onClick={() => { setSubmitting(m); setContent(""); }}>
                   {m.status === "submitted" ? "Resubmit" : "Submit work"}
                 </button>
               )}
               {isMentor && m.status === "submitted" && (
                 <>
-                  <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.approveMilestone(m.id), "Milestone approved.")}>
+                  <button type="button" className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.approveMilestone(m.id), "Milestone approved.")}>
                     Approve
                   </button>
-                  <button className="btn-secondary text-xs py-1.5" onClick={() => { setRevising(m); setContent(""); }}>
+                  <button type="button" className="btn-secondary text-xs py-1.5" onClick={() => { setRevising(m); setContent(""); }}>
                     Request revision
                   </button>
                 </>
@@ -732,8 +802,12 @@ function MilestonesSection({ job, isOwner, isTeam, isMentor, onChanged, onError 
         <Modal title={`Submit work — ${submitting.title}`} onClose={() => setSubmitting(null)}>
           <label className="label">What did the team complete? Paste links if any.</label>
           <textarea className="input" rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
-          <button className="btn-primary mt-4" disabled={busy || content.trim().length < 5}
-            onClick={() => run(() => api.submitMilestone(submitting.id, content.trim()), "Submitted for mentor review.")}>
+          <button
+            type="button"
+            className="btn-primary mt-4"
+            disabled={busy || content.trim().length < 5}
+            onClick={() => run(() => api.submitMilestone(submitting.id, content.trim()), "Submitted for mentor review.")}
+          >
             {busy ? "Submitting..." : "Submit"}
           </button>
         </Modal>
@@ -743,8 +817,12 @@ function MilestonesSection({ job, isOwner, isTeam, isMentor, onChanged, onError 
         <Modal title={`Request revision — ${revising.title}`} onClose={() => setRevising(null)}>
           <label className="label">What needs to change?</label>
           <textarea className="input" rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
-          <button className="btn-primary mt-4" disabled={busy || content.trim().length < 5}
-            onClick={() => run(() => api.revisionMilestone(revising.id, content.trim()), "Revision requested.")}>
+          <button
+            type="button"
+            className="btn-primary mt-4"
+            disabled={busy || content.trim().length < 5}
+            onClick={() => run(() => api.revisionMilestone(revising.id, content.trim()), "Revision requested.")}
+          >
             {busy ? "Sending..." : "Send"}
           </button>
         </Modal>
@@ -771,27 +849,27 @@ function UpdatesSection({ jobId, updates, onPosted, onError }: { jobId: string; 
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-4">Progress updates</h3>
-      <p className="text-xs text-gray-400 -mt-2 mb-3">Visible only to the owner, the hired team and the assigned mentor.</p>
+    <div className="card p-6">
+      <h3 className="heading-card mb-1">Progress updates</h3>
+      <p className="text-xs text-muted mb-4">Visible only to the owner, the hired team and the assigned mentor.</p>
       <div className="space-y-3 mb-4 max-h-96 overflow-y-auto">
-        {updates.length === 0 && <p className="text-sm text-gray-500">No updates yet.</p>}
+        {updates.length === 0 && <p className="text-sm text-muted">No updates yet.</p>}
         {updates.map((u) => (
-          <div key={u.id} className="rounded-lg border border-gray-100 p-3">
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <span className="font-medium text-gray-700">{u.authorName}</span>
+          <div key={u.id} className="rounded-[8px] border border-line bg-surface p-3.5">
+            <div className="flex items-center gap-2 text-xs text-muted">
+              <span className="font-semibold text-ink">{u.authorName}</span>
               <span>{u.authorRole}</span>
               <span>·</span>
               <span>{new Date(u.createdAt + "Z").toLocaleString()}</span>
             </div>
-            {u.milestoneTitle && <p className="text-xs text-brand-600 mt-1 font-medium">↳ {u.milestoneTitle}</p>}
-            <p className="text-sm text-gray-700 mt-1">{u.content}</p>
+            {u.milestoneTitle && <p className="text-xs text-accent mt-1 font-medium">↳ {u.milestoneTitle}</p>}
+            <p className="text-sm text-ink mt-1.5 leading-relaxed">{u.content}</p>
           </div>
         ))}
       </div>
       <div className="flex gap-2">
         <input className="input" placeholder="Post an update or comment..." value={content} onChange={(e) => setContent(e.target.value)} />
-        <button className="btn-primary shrink-0" disabled={busy || content.trim().length < 1} onClick={post}>
+        <button type="button" className="btn-primary shrink-0" disabled={busy || content.trim().length < 1} onClick={post}>
           {busy ? "..." : "Post"}
         </button>
       </div>
@@ -843,25 +921,25 @@ function ReviewsSection({ job, team, me, onChanged, onError }: {
   }
 
   return (
-    <div className="card">
-      <h3 className="font-semibold text-lg mb-4">Reviews</h3>
+    <div className="card p-6">
+      <h3 className="heading-card mb-4">Reviews</h3>
       <div className="space-y-3 mb-4">
-        {reviews.length === 0 && <p className="text-sm text-gray-500">No reviews yet.</p>}
+        {reviews.length === 0 && <div className="empty-state">No reviews yet.</div>}
         {reviews.map((r) => (
-          <div key={r.id} className="rounded-lg bg-gray-50 p-3">
+          <div key={r.id} className="rounded-[8px] border border-line bg-surface p-3.5 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium text-sm">{r.reviewerName}</span>
-              <span className="text-xs text-gray-400">→</span>
-              <span className="text-sm">{r.revieweeName}</span>
+              <span className="font-semibold text-sm text-ink">{r.reviewerName}</span>
+              <span className="text-xs text-muted">→</span>
+              <span className="text-sm text-ink">{r.revieweeName}</span>
               <Stars value={r.rating} />
             </div>
-            {r.comment && <p className="text-sm text-gray-600 mt-1">{r.comment}</p>}
+            {r.comment && <p className="text-sm text-muted mt-1 leading-relaxed">{r.comment}</p>}
           </div>
         ))}
       </div>
       {candidates.length > 0 ? (
-        <div className="border-t pt-4">
-          <p className="text-sm font-medium text-gray-700 mb-2">
+        <div className="border-t border-line pt-4">
+          <p className="text-sm font-semibold text-ink mb-2">
             {isOwner ? "Rate a team member" : "Rate the owner"}
           </p>
           {isOwner && (
@@ -873,10 +951,12 @@ function ReviewsSection({ job, team, me, onChanged, onError }: {
           )}
           <RatingInput value={rating} onChange={setRating} />
           <textarea className="input mt-3" rows={3} placeholder="How was working together?" value={comment} onChange={(e) => setComment(e.target.value)} />
-          <button className="btn-primary mt-3" disabled={busy || !revieweeId} onClick={submit}>{busy ? "Submitting..." : "Submit review"}</button>
+          <button type="button" className="btn-primary mt-3" disabled={busy || !revieweeId} onClick={submit}>
+            {busy ? "Submitting..." : "Submit review"}
+          </button>
         </div>
       ) : (
-        (isOwner || onTeam) && <p className="text-sm text-gray-500">You've reviewed everyone on this job. 🎉</p>
+        (isOwner || onTeam) && <p className="text-sm text-muted">You've reviewed everyone on this job.</p>
       )}
     </div>
   );
