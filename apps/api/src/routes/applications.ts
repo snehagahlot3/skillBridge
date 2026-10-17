@@ -131,6 +131,14 @@ export function applicationRoutes() {
       return c.json({ error: "You already submitted a quote for this position" }, 409);
     }
 
+    const [onTeam] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.jobId, jobId), eq(teamMembers.userId, user.id)));
+    if (onTeam) {
+      return c.json({ error: "You are already on the team for this job" }, 400);
+    }
+
     const id = crypto.randomUUID();
     await db.insert(applications).values({
       id,

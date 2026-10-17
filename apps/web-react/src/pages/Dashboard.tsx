@@ -114,31 +114,49 @@ function FindJobs({ jobs }: { jobs: Job[] }) {
         <input className="input max-w-xs" placeholder="Filter by skill..." value={skillFilter} onChange={(e) => setSkillFilter(e.target.value)} />
       </div>
       <div className="grid gap-4">
-        {filtered.map((job) => (
-          <div key={job.id} className="card">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
-                <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 160)}{job.description.length > 160 ? "…" : ""}</p>
-                <div className="flex gap-2 mt-2 flex-wrap">
-                  <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
-                  <span className="badge bg-gray-100 text-gray-700">{job.category}</span>
-                  {job.owner?.businessName && <span className="badge bg-gray-100 text-gray-700">{job.owner.businessName}</span>}
-                  {job.owner?.verificationStatus === "verified" && <span className="badge-verified">Verified</span>}
-                  {job.applicationCount != null && <span className="badge bg-blue-50 text-blue-700">{job.applicationCount} quotes</span>}
+        {filtered.map((job) => {
+          const applied = job.myApplication != null;
+          const hiredCount = (job.positionFill ?? []).reduce((s, p) => s + (p.filled ?? 0), 0);
+          const totalPositions = (job.positionFill ?? []).reduce((s, p) => s + p.count, 0);
+          return (
+            <div key={job.id} className="card">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <Link to={`/jobs/${job.id}`} className="font-semibold text-lg hover:underline">{job.title}</Link>
+                  <p className="text-sm text-gray-600 mt-1">{job.description.slice(0, 160)}{job.description.length > 160 ? "…" : ""}</p>
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    <span className="badge bg-brand-50 text-brand-700">{budgetLabel(job)}</span>
+                    <span className="badge bg-gray-100 text-gray-700">{job.category}</span>
+                    {job.owner?.businessName && <span className="badge bg-gray-100 text-gray-700">{job.owner.businessName}</span>}
+                    {job.owner?.verificationStatus === "verified" && <span className="badge-verified">Verified</span>}
+                    {totalPositions > 1 && (
+                      <span className="badge bg-blue-50 text-blue-700">
+                        {hiredCount > 0 ? `Team hiring: ${hiredCount}/${totalPositions} filled` : `Team of ${totalPositions} needed`}
+                      </span>
+                    )}
+                    {applied && (
+                      <span className={`badge ${job.myApplication!.status === "accepted" ? "badge-verified" : job.myApplication!.status === "rejected" ? "bg-gray-100 text-gray-500" : "badge-pending"}`}>
+                        {job.myApplication!.status === "pending" ? "Applied — awaiting decision" : job.myApplication!.status}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {!applied ? (
+                  <Link to={`/jobs/${job.id}`} className="btn-primary shrink-0">View &amp; quote</Link>
+                ) : (
+                  <Link to={`/jobs/${job.id}`} className="btn-secondary shrink-0">View application</Link>
+                )}
               </div>
-              <Link to={`/jobs/${job.id}`} className="btn-primary shrink-0">View &amp; quote</Link>
+              {job.requiredSkills?.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {job.requiredSkills.map((skill) => (
+                    <span key={skill} className="badge bg-gray-100 text-gray-700">{skill}</span>
+                  ))}
+                </div>
+              )}
             </div>
-            {job.requiredSkills?.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1">
-                {job.requiredSkills.map((skill) => (
-                  <span key={skill} className="badge bg-gray-100 text-gray-700">{skill}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {filtered.length === 0 && <div className="card text-center text-gray-500">No open jobs found.</div>}
       </div>
     </>

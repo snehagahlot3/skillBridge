@@ -265,8 +265,12 @@ export function adminRoutes() {
 
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
     if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.status !== "open") {
+      return c.json({ error: "Only open jobs can be delisted; completed jobs stay in history" }, 400);
+    }
 
-    await db.update(jobs).set({ status: "delisted" }).where(eq(jobs.id, id));
+    const result = await transitionJobStatus(db, id, "delisted", actor.id);
+    if (!result.ok) return c.json({ error: result.error }, 400);
     await db.insert(auditLog).values({
       id: crypto.randomUUID(),
       actorId: actor.id,

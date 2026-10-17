@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, and, desc, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, ne, inArray, notInArray } from "drizzle-orm";
 import {
   jobs,
   applications,
@@ -165,16 +165,26 @@ export function jobRoutes() {
 
   // List jobs. Browsing the portal without filters shows ONLY open jobs —
   // once a team is hired the job is effectively delisted from the portal.
+  // The viewer's own jobs and jobs they are already hired on are excluded
+  // from the general feed (they live in My Jobs / My Work).
   app.get("/", async (c) => {
     const db = c.var.db;
     const user = c.get("user");
     const { skill, category, status, mine } = c.req.query();
+
+    const myTeam = await db.select().from(teamMembers).where(eq(teamMembers.userId, user.id));
+    const myTeamJobIds = myTeam.map((t) => t.jobId);
 
     const conditions = [];
     if (status) conditions.push(eq(jobs.status, status as JobStatus));
     if (category) conditions.push(eq(jobs.category, category));
     if (mine === "1") conditions.push(eq(jobs.ownerId, user.id));
     if (!status && !mine) conditions.push(eq(jobs.status, "open"));
+    if (!mine) {
+      // General feed: never show the viewer's own jobs or jobs they're hired on
+      conditions.push(ne(jobs.ownerId, user.id));
+      if (myTeamJobIds.length > 0) conditions.push(notInArray(jobs.id, myTeamJobIds));
+    }
     if (mine === "1") conditions.push(ne(jobs.status, "delisted"));
 
     const base = db.select().from(jobs);
@@ -200,7 +210,16 @@ export function jobRoutes() {
           ...p,
           filled: team.filter((t) => t.positionId === p.id).length,
         }));
-        return { ...details, applicationCount: apps.length, positionFill };
+        const [myApp] = await db
+          .select()
+          .from(applications)
+          .where(and(eq(applications.jobId, j.id), eq(applications.applicantId, user.id)));
+        return {
+          ...details,
+          applicationCount: apps.length,
+          positionFill,
+          myApplication: myApp ? { status: myApp.status, positionId: myApp.positionId } : null,
+        };
       })
     );
 

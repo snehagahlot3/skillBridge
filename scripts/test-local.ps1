@@ -62,6 +62,9 @@ Assert "seeded team job open (job-001)" ($market.json | Where-Object { $_.id -eq
 Assert "in-progress job-005 hidden from portal" (-not ($market.json | Where-Object { $_.id -eq "job-005" }))
 $j1 = $market.json | Where-Object { $_.id -eq "job-001" }
 Assert "positionFill exposed" ($j1.positionFill.Count -eq 3)
+Assert "myApplication flag exposed (priya applied in seed)" ($j1.myApplication -and $j1.myApplication.status -eq "pending")
+$rajMarket = Call GET "/api/jobs" $null $rajeshToken
+Assert "owner's own jobs excluded from feed" (-not ($rajMarket.json | Where-Object { $_.id -eq "job-001" }))
 
 Write-Host "`n=== 3. Post team job + publish ==="
 $newJob = Call POST "/api/jobs" @{
@@ -105,6 +108,12 @@ $h1 = Call POST "/api/applications/$($priyaApp.id)/accept" $null $rajeshToken
 Assert "hire priya (position not full yet)" ($h1.status -eq 200 -and $h1.json.teamComplete -eq $false)
 $detail = Call GET "/api/jobs/$jobId" $null $rajeshToken
 Assert "still open after partial fill" ($detail.json.status -eq "open")
+$priyaFeed = Call GET "/api/jobs?status=open" $null $priyaToken
+Assert "hired member's job excluded from their feed" (-not ($priyaFeed.json | Where-Object { $_.id -eq $jobId }))
+$nehaFeed = Call GET "/api/jobs?status=open" $null $nehaToken
+Assert "unfilled job still visible to other students" ($nehaFeed.json | Where-Object { $_.id -eq $jobId })
+$teamApply = Call POST "/api/applications/$jobId/apply" @{ positionId = $newJob.json.positions[1].id; pitch = "I am already on this team and should be blocked from applying again."; quoteAmount = 4000 } $priyaToken
+Assert "team member blocked from re-applying" ($teamApply.status -eq 400)
 
 $h2 = Call POST "/api/applications/$($arjunApp.id)/accept" $null $rajeshToken
 Assert "hire arjun (marketing now full)" ($h2.status -eq 200 -and $h2.json.teamComplete -eq $false)
@@ -180,9 +189,13 @@ Assert "block user" ($blockUser.status -eq 200)
 $blockedReq = Call GET "/api/profile/me" $null $arjunToken
 Assert "blocked user rejected" ($blockedReq.status -eq 403)
 $null = Call PATCH "/api/admin/users/$($arjun.json.user.id)/unblock" $null $adminToken
-$delist = Call PATCH "/api/admin/jobs/$jobId/delist" $null $adminToken
-Assert "delist" ($delist.status -eq 200)
-$null = Call PATCH "/api/admin/jobs/$jobId/relist" $null $adminToken
+$delistCompleted = Call PATCH "/api/admin/jobs/$jobId/delist" $null $adminToken
+Assert "completed job cannot be delisted back into the pool" ($delistCompleted.status -eq 400)
+$delist = Call PATCH "/api/admin/jobs/job-002/delist" $null $adminToken
+Assert "delist open job" ($delist.status -eq 200)
+$null = Call PATCH "/api/admin/jobs/job-002/relist" $null $adminToken
+$relisted = Call GET "/api/jobs" $null $priyaToken
+Assert "relisted job returns to open feed" ($relisted.json | Where-Object { $_.id -eq "job-002" })
 
 Write-Host "`n=== 10. Group chat access ==="
 $send = Call POST "/api/chat/$jobId/messages" @{ text = "Group chat hello from the owner!" } $rajeshToken

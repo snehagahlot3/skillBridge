@@ -177,7 +177,9 @@ export default function JobDetail() {
           </div>
         )}
 
-        {job.status === "open" && !isOwner && <QuoteBox job={job} onDone={() => load()} />}
+        {job.status === "open" && !isOwner && !isTeam && (
+          <QuoteBox job={job} team={team} onDone={() => load()} />
+        )}
 
         {(isOwner || isMentor) && (job.applications?.length ?? 0) > 0 && (
           <QuotesSection job={job} team={team} onChanged={load} onError={setToast} />
@@ -208,12 +210,17 @@ export default function JobDetail() {
   );
 }
 
-function QuoteBox({ job, onDone }: { job: Job; onDone: () => void }) {
-  const [positionId, setPositionId] = useState(job.positions[0]?.id || "");
+function QuoteBox({ job, team, onDone }: { job: Job; team: TeamMember[]; onDone: () => void }) {
+  const openPositions = job.positions.filter(
+    (p) => team.filter((t) => t.positionId === p.id).length < p.count
+  );
+  const [positionId, setPositionId] = useState(openPositions[0]?.id || "");
   const [pitch, setPitch] = useState("");
   const [quote, setQuote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  if (openPositions.length === 0) return null;
 
   async function submit() {
     setBusy(true);
@@ -240,9 +247,14 @@ function QuoteBox({ job, onDone }: { job: Job; onDone: () => void }) {
         <div>
           <label className="label">Position you're applying for</label>
           <select className="input" value={positionId} onChange={(e) => setPositionId(e.target.value)}>
-            {job.positions.map((p) => (
-              <option key={p.id} value={p.id}>{p.title} ({p.count} needed)</option>
-            ))}
+            {openPositions.map((p) => {
+              const filled = team.filter((t) => t.positionId === p.id).length;
+              return (
+                <option key={p.id} value={p.id}>
+                  {p.title} ({p.count - filled} of {p.count} open)
+                </option>
+              );
+            })}
           </select>
         </div>
         <div>

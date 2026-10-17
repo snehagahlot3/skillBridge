@@ -93,6 +93,7 @@ export interface Job {
   mentor?: { id: string; name: string } | null;
   applicationCount?: number;
   positionFill?: JobPosition[];
+  myApplication?: { status: "pending" | "accepted" | "rejected"; positionId: string } | null;
   milestones?: Milestone[];
   applications?: Application[];
   team?: TeamMember[];
