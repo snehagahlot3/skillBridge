@@ -211,7 +211,14 @@ export default function JobDetail() {
 
         {(job.aiRepos ?? []).length > 0 && isParticipant && (
           <div className="card">
-            <h3 className="font-semibold text-lg mb-4">AI code reviews</h3>
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+              <h3 className="font-semibold text-lg">AI code reviews</h3>
+              {job.aiGateThreshold != null && (
+                <span className="badge bg-brand-50 text-brand-700">
+                  Gate: final milestone needs ≥ {job.aiGateThreshold}/5
+                </span>
+              )}
+            </div>
             <div className="space-y-2">
               {job.aiRepos!.map((r) => (
                 <div key={r.id} className="rounded-lg bg-gray-50 p-3 flex items-center justify-between flex-wrap gap-2">

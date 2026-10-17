@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import { eq, isNull, inArray, and } from "drizzle-orm";
-import { jobs, applications, milestones, jobUpdates, users, teamMembers } from "../db/schema";
+import { z } from "zod";
+import { eq, isNull, inArray, and, desc } from "drizzle-orm";
+import { jobs, applications, milestones, jobUpdates, users, teamMembers, aiRepos, reviewRuns } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import type { AppEnv } from "../types";
 
@@ -152,6 +153,42 @@ export function mentorRoutes() {
     });
 
     return c.json({ ok: true });
+  });
+
+  // AI review gate: mentor requires the latest AI review rating to be
+  // >= threshold before the FINAL milestone can be approved.
+  app.post("/jobs/:id/ai-gate", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+    const body = await c.req.json();
+    const parsed = z
+      .object({ threshold: z.number().int().min(1).max(5).nullable() })
+      .safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.mentorId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    await db
+      .update(jobs)
+      .set({ aiGateThreshold: parsed.data.threshold })
+      .where(eq(jobs.id, id));
+    await db.insert(jobUpdates).values({
+      id: crypto.randomUUID(),
+      jobId: id,
+      authorId: user.id,
+      kind: "system",
+      content:
+        parsed.data.threshold == null
+          ? "AI review gate disabled — the final milestone no longer requires an AI review."
+          : `AI review gate enabled: the final milestone requires an AI code review rating of at least ${parsed.data.threshold}/5.`,
+    });
+
+    return c.json({ ok: true, aiGateThreshold: parsed.data.threshold });
   });
 
   return app;

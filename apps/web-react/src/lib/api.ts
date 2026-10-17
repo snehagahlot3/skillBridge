@@ -88,6 +88,7 @@ export interface Job {
   acceptanceCriteria: string | null;
   status: JobStatus;
   mentorId: string | null;
+  aiGateThreshold?: number | null;
   createdAt: string;
   owner?: { id: string; name: string; businessName: string | null; verificationStatus: string; slug: string | null } | null;
   mentor?: { id: string; name: string } | null;
@@ -294,6 +295,8 @@ export interface ReviewRun {
   commitSha: string;
   commitMessage: string | null;
   status: "running" | "done" | "failed";
+  kind?: "commit" | "pr";
+  prNumber?: number | null;
   summary: string | null;
   rating: number | null;
   findings: ReviewFinding[];
@@ -611,6 +614,10 @@ class ApiClient {
 
   releaseJob(id: string) {
     return this.fetch(`/mentor/jobs/${id}/release`, { method: "POST" });
+  }
+
+  mentorAiGate(id: string, threshold: number | null) {
+    return this.fetch(`/mentor/jobs/${id}/ai-gate`, { method: "POST", body: JSON.stringify({ threshold }) });
   }
 
   // ---- admin ----

@@ -112,3 +112,16 @@ export async function decryptToken(stored: string, secret: string): Promise<stri
   );
   return new TextDecoder().decode(plain);
 }
+
+export async function verifyHmacHex(message: string, secret: string, expectedHex: string): Promise<boolean> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  const actualHex = toHex(new Uint8Array(sig));
+  return timingSafeEqual(actualHex, expectedHex.replace(/^sha256=/i, ""));
+}

@@ -9,6 +9,7 @@ export interface Env {
   FRONTEND_URL: string;
   AI_GITHUB_MOCK?: string;
   AI_GH_DAILY_CAP?: string;
+  GH_WEBHOOK_SECRET?: string;
 }
 
 export interface AuthUser {

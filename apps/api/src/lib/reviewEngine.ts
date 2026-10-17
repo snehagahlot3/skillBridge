@@ -2,12 +2,13 @@
 // Fetches a commit diff, chunks it for the model's context window, runs one
 // Workers AI review per chunk, and aggregates the reports.
 
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { aiRepos, reviewRuns, jobs, jobUpdates } from "../db/schema";
 import type { DB } from "../db";
 import { createDb } from "../db";
 import { decryptToken } from "./crypto";
 import * as gh from "./githubClient";
+import type { GhPullRequest } from "./githubClient";
 import type { Env } from "../types";
 import { AI_MODEL } from "./aiModel";
 
@@ -88,22 +89,15 @@ function parseReport(text: string): ReviewReport | null {
   }
 }
 
-export async function reviewCommit(
+export async function reviewDiff(
   env: Env,
-  owner: string,
-  repo: string,
-  branch: string,
-  token: string,
-  github: {
-    getLatestCommit: typeof import("./githubClient").getLatestCommit;
-    getCommitDiff: typeof import("./githubClient").getCommitDiff;
-  }
-): Promise<ReviewOutcome> {
-  const { sha, message } = await github.getLatestCommit(env, owner, repo, branch, token);
-  const diff = await github.getCommitDiff(env, owner, repo, sha, token);
-
+  diff: string
+): Promise<{ report: ReviewReport; tokensUsed: number }> {
   if (!diff || !diff.trim()) {
-    return { sha, message, report: null, tokensUsed: 0 };
+    return {
+      report: { summary: "No changes to review.", rating: 3, findings: [], suggestedFixes: [] },
+      tokensUsed: 0,
+    };
   }
 
   const chunks = chunkDiff(diff).slice(0, MAX_CHUNKS);
@@ -125,8 +119,6 @@ export async function reviewCommit(
 
   if (!reports.length) {
     return {
-      sha,
-      message,
       report: {
         summary: "The AI reviewer could not produce a report for this diff.",
         rating: 3,
@@ -142,8 +134,6 @@ export async function reviewCommit(
   const avgRating = Math.round(reports.reduce((s, r) => s + r.rating, 0) / reports.length);
 
   return {
-    sha,
-    message,
     report: {
       summary: reports.map((r) => r.summary).join(" "),
       rating: avgRating,
@@ -152,6 +142,28 @@ export async function reviewCommit(
     },
     tokensUsed,
   };
+}
+
+export async function reviewCommit(
+  env: Env,
+  owner: string,
+  repo: string,
+  branch: string,
+  token: string,
+  github: {
+    getLatestCommit: typeof import("./githubClient").getLatestCommit;
+    getCommitDiff: typeof import("./githubClient").getCommitDiff;
+  }
+): Promise<ReviewOutcome> {
+  const { sha, message } = await github.getLatestCommit(env, owner, repo, branch, token);
+  const diff = await github.getCommitDiff(env, owner, repo, sha, token);
+
+  if (!diff || !diff.trim()) {
+    return { sha, message, report: null, tokensUsed: 0 };
+  }
+
+  const { report, tokensUsed } = await reviewDiff(env, diff);
+  return { sha, message, report, tokensUsed };
 }
 
 export function formatReport(sha: string, message: string, report: ReviewReport): string {
@@ -283,6 +295,238 @@ export async function pollAllRepos(env: Env): Promise<void> {
       await runReviewForRepo(env, db, repo);
     } catch (err) {
       console.error(`poll failed for ${repo.owner}/${repo.repo}:`, err);
+    }
+  }
+}
+
+// ---- PR reviews ----
+
+export async function reviewPullRequest(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  token: string
+): Promise<{ pr: GhPullRequest; report: ReviewReport; tokensUsed: number }> {
+  const pr = await gh.getPullRequest(env, owner, repo, prNumber, token);
+  const diff = await gh.getPrDiff(env, owner, repo, prNumber, token);
+  const { report, tokensUsed } = await reviewDiff(env, diff);
+  return { pr, report, tokensUsed };
+}
+
+export async function runReviewForPr(
+  env: Env,
+  db: DB,
+  repo: typeof aiRepos.$inferSelect,
+  prNumber: number
+): Promise<typeof reviewRuns.$inferSelect> {
+  const token = await decryptToken(repo.tokenEnc, env.JWT_SECRET);
+
+  const runId = crypto.randomUUID();
+  await db.insert(reviewRuns).values({
+    id: runId,
+    repoId: repo.id,
+    commitSha: "",
+    status: "running",
+    kind: "pr",
+    prNumber,
+  });
+
+  try {
+    const { pr, report, tokensUsed } = await reviewPullRequest(env, repo.owner, repo.repo, prNumber, token);
+
+    // PR-level review comment (always)
+    const comment = await gh.postPrReviewComment(
+      env,
+      repo.owner,
+      repo.repo,
+      prNumber,
+      formatPrReport(pr, report),
+      token
+    );
+
+    // Best-effort inline comments on up to 3 findings
+    let inlineCount = 0;
+    for (const f of report.findings) {
+      if (inlineCount >= 3 || !f.line) continue;
+      try {
+        await gh.postPrInlineComment(
+          env,
+          repo.owner,
+          repo.repo,
+          prNumber,
+          pr.head.sha,
+          f.file,
+          f.line,
+          `[${f.severity}] ${f.issue} — ${f.suggestion}`,
+          token
+        );
+        inlineCount += 1;
+      } catch {
+        // inline position may not map to the diff; skip silently
+      }
+    }
+
+    await db
+      .update(reviewRuns)
+      .set({
+        status: "done",
+        commitSha: pr.head.sha,
+        commitMessage: `PR #${pr.number}: ${pr.title}`,
+        summary: report.summary,
+        rating: report.rating,
+        findings: JSON.stringify(report.findings),
+        suggestedFixes: JSON.stringify(report.suggestedFixes),
+        commentUrl: comment.html_url,
+        tokensUsed,
+      })
+      .where(eq(reviewRuns.id, runId));
+
+    if (repo.jobId) {
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, repo.jobId));
+      if (job) {
+        await db.insert(jobUpdates).values({
+          id: crypto.randomUUID(),
+          jobId: repo.jobId,
+          authorId: repo.userId,
+          kind: "update",
+          content: `🤖 AI PR review: ${report.rating}/5 for PR #${pr.number} "${pr.title}" (${repo.owner}/${repo.repo})\n${report.summary}\n${comment.html_url}`,
+        });
+      }
+    }
+
+    const [run] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, runId));
+    return run;
+  } catch (err) {
+    console.error("PR review failed:", err);
+    await db.update(reviewRuns).set({ status: "failed" }).where(eq(reviewRuns.id, runId));
+    const [run] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, runId));
+    return run;
+  }
+}
+
+function formatPrReport(pr: GhPullRequest, report: ReviewReport): string {
+  const lines = [
+    "## 🤖 SkillBridge AI Code Review",
+    `PR #${pr.number} — ${pr.title}`,
+    "",
+    `**Rating:** ${"★".repeat(report.rating)}${"☆".repeat(5 - report.rating)} (${report.rating}/5)`,
+    "",
+    report.summary,
+  ];
+  if (report.findings.length) {
+    lines.push("", "### Findings");
+    for (const f of report.findings) {
+      lines.push(
+        `- **[${f.severity}]** \`${f.file}${f.line ? ":" + f.line : ""}\` — ${f.issue} → ${f.suggestion}`
+      );
+    }
+  }
+  if (report.suggestedFixes.length) {
+    lines.push("", "### Suggested fixes");
+    for (const s of report.suggestedFixes) lines.push(`- ${s}`);
+  }
+  lines.push(
+    "",
+    "---",
+    `Post \`@skillbridge approve\` or \`@skillbridge request-changes\` in a comment to act on this review.`,
+    "*Generated by the SkillBridge AI code-review agent.*"
+  );
+  return lines.join("\n");
+}
+
+// ---- GitHub webhook handling ----
+
+export interface WebhookPayload {
+  action?: string;
+  ref?: string;
+  comment?: { body?: string; user?: { login?: string } };
+  issue?: { number?: number };
+  pull_request?: {
+    number: number;
+    title?: string;
+    head?: { sha: string };
+  };
+  repository?: { full_name?: string };
+}
+
+export async function handleWebhookEvent(env: Env, payload: WebhookPayload): Promise<void> {
+  const fullName = payload.repository?.full_name;
+  if (!fullName) return;
+  const [owner, repoName] = fullName.split("/");
+  if (!owner || !repoName) return;
+
+  const db = createDb(env.DB);
+  const repos = await db.select().from(aiRepos).where(
+    and(eq(aiRepos.owner, owner), eq(aiRepos.repo, repoName), eq(aiRepos.status, "active"))
+  );
+  if (!repos.length) return;
+
+  const action = payload.action ?? "";
+
+  // push -> review new commit
+  if (payload.ref && payload.ref.startsWith("refs/heads/")) {
+    for (const repo of repos) {
+      try {
+        await runReviewForRepo(env, db, repo);
+      } catch (err) {
+        console.error("webhook push review failed:", err);
+      }
+    }
+    return;
+  }
+
+  // pull_request opened/synchronize/reopened -> PR review
+  if (payload.pull_request?.number && ["opened", "synchronize", "reopened"].includes(action)) {
+    for (const repo of repos) {
+      try {
+        await runReviewForPr(env, db, repo, payload.pull_request.number);
+      } catch (err) {
+        console.error("webhook PR review failed:", err);
+      }
+    }
+    return;
+  }
+
+  // issue_comment with @skillbridge command -> formal PR review
+  if (payload.comment?.body && payload.issue?.number) {
+    const body = payload.comment.body;
+    const command = body.includes("@skillbridge approve")
+      ? "APPROVE"
+      : body.includes("@skillbridge request-changes")
+        ? "REQUEST_CHANGES"
+        : null;
+    if (!command) return;
+
+    for (const repo of repos) {
+      // only the repo's connected GitHub account may trigger formal reviews
+      if (payload.comment.user?.login !== repo.ghLogin) continue;
+      try {
+        const token = await decryptToken(repo.tokenEnc, env.JWT_SECRET);
+        await gh.postPrFormalReview(
+          env,
+          repo.owner,
+          repo.repo,
+          payload.issue.number,
+          command,
+          `@skillbridge ${command === "APPROVE" ? "approve" : "request-changes"} triggered by ${payload.comment.user.login}.`,
+          token
+        );
+        if (repo.jobId) {
+          const [job] = await db.select().from(jobs).where(eq(jobs.id, repo.jobId));
+          if (job) {
+            await db.insert(jobUpdates).values({
+              id: crypto.randomUUID(),
+              jobId: repo.jobId,
+              authorId: repo.userId,
+              kind: "update",
+              content: `🤖 GitHub: PR #${payload.issue.number} ${command === "APPROVE" ? "approved" : "changes requested"} via @skillbridge.`,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("webhook command failed:", err);
+      }
     }
   }
 }

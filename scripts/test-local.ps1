@@ -54,7 +54,9 @@ $mentor = Call POST "/api/auth/login" @{ email = "mentor@demo.com"; password = "
 $mentorToken = $mentor.json.token
 $meera = Call POST "/api/auth/login" @{ email = "meera@demo.com"; password = "mentor12345" }
 $meeraToken = $meera.json.token
-Assert "logins" ($rajesh.ok -and $priya.ok -and $arjun.ok -and $neha.ok -and $mentor.ok -and $meera.ok)
+$fatima = Call POST "/api/auth/login" @{ email = "fatima@demo.com"; password = "demo12345" }
+$fatimaToken = $fatima.json.token
+Assert "logins" ($rajesh.ok -and $priya.ok -and $arjun.ok -and $neha.ok -and $mentor.ok -and $meera.ok -and $fatima.ok)
 
 Write-Host "`n=== 2. Marketplace shows only open jobs ==="
 $market = Call GET "/api/jobs" $null $priyaToken
@@ -356,6 +358,107 @@ $del = Call DELETE "/api/ai/github/repos/$repoId" $null $rajeshToken
 Assert "disconnect repo" ($del.status -eq 200)
 $reposAfter = Call GET "/api/ai/github/repos" $null $rajeshToken
 Assert "repo removed" ($reposAfter.json.Count -eq 0)
+
+Write-Host "`n=== 12b. GitHub webhooks (HMAC + PR review + commands) ==="
+$hookSecret = "dev-webhook-secret"
+function Send-Webhook($payloadJson) {
+  $hmac = New-Object System.Security.Cryptography.HMACSHA256(, [System.Text.Encoding]::UTF8.GetBytes($hookSecret))
+  $hash = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($payloadJson))
+  $sig = "sha256=" + (($hash | ForEach-Object { $_.ToString("x2") }) -join "")
+  try {
+    $res = Invoke-WebRequest -Uri "$Base/api/ai/github/webhook" -Method POST -Body $payloadJson -ContentType "application/json" -Headers @{ "X-Hub-Signature-256" = $sig } -UseBasicParsing -TimeoutSec 20
+    return @{ status = [int]$res.StatusCode; ok = $true }
+  } catch {
+    return @{ status = [int]$_.Exception.Response.StatusCode; ok = $false }
+  }
+}
+
+$repo2 = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789"; jobId = $jobId } $rajeshToken
+Assert "connect repo for webhooks" ($repo2.status -eq 201)
+$repo2Id = $repo2.json.id
+
+try {
+  Invoke-WebRequest -Uri "$Base/api/ai/github/webhook" -Method POST -Body '{}' -ContentType "application/json" -Headers @{ "X-Hub-Signature-256" = "sha256=deadbeef" } -UseBasicParsing -TimeoutSec 20 | Out-Null
+  Assert "webhook rejects bad signature" $false
+} catch {
+  Assert "webhook rejects bad signature" ([int]$_.Exception.Response.StatusCode -eq 401)
+}
+
+$pushPayload = '{"ref":"refs/heads/main","repository":{"full_name":"testorg/testrepo"}}'
+$runsBefore = (Call GET "/api/ai/github/repos/$repo2Id/runs" $null $rajeshToken).json.Count
+$pushRes = Send-Webhook $pushPayload
+Assert "webhook push accepted" ($pushRes.status -eq 200)
+
+$pushReviewed = $false
+for ($i = 0; $i -lt 30; $i++) {
+  $runsNow = (Call GET "/api/ai/github/repos/$repo2Id/runs" $null $rajeshToken).json
+  if ($runsNow.Count -gt $runsBefore) { $pushReviewed = $true; break }
+  Start-Sleep -Seconds 1
+}
+Assert "webhook push triggered a review run" $pushReviewed
+
+$prPayload = '{"action":"opened","number":7,"pull_request":{"number":7,"title":"mock pr","head":{"sha":"abc"},"base":{"ref":"main"}},"repository":{"full_name":"testorg/testrepo"}}'
+$prRes = Send-Webhook $prPayload
+Assert "webhook PR opened accepted" ($prRes.status -eq 200)
+
+$prReviewed = $false
+for ($i = 0; $i -lt 40; $i++) {
+  $prRuns = (Call GET "/api/ai/github/repos/$repo2Id/runs" $null $rajeshToken).json
+  if ($prRuns | Where-Object { $_.kind -eq "pr" -and $_.status -eq "done" }) { $prReviewed = $true; break }
+  Start-Sleep -Seconds 1
+}
+Assert "webhook PR produced a PR review run" $prReviewed
+
+$cmdPayload = '{"action":"created","comment":{"body":"@skillbridge approve","user":{"login":"mock-owner"}},"issue":{"number":7},"repository":{"full_name":"testorg/testrepo"}}'
+$cmdRes = Send-Webhook $cmdPayload
+Assert "webhook approve command accepted" ($cmdRes.status -eq 200)
+
+$cmdPosted = $false
+for ($i = 0; $i -lt 20; $i++) {
+  $upd = (Call GET "/api/jobs/$jobId/updates" $null $rajeshToken).json
+  if ($upd | Where-Object { $_.content -like "*approved via @skillbridge*" }) { $cmdPosted = $true; break }
+  Start-Sleep -Seconds 1
+}
+Assert "approve command posted to job timeline" $cmdPosted
+
+$null = Call DELETE "/api/ai/github/repos/$repo2Id" $null $rajeshToken
+
+Write-Host "`n=== 13. Mentor AI review gate ==="
+$gateRepo = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789"; jobId = "job-005" } $fatimaToken
+Assert "owner links repo to job-005" ($gateRepo.status -eq 201)
+$gateRepoId = $gateRepo.json.id
+
+$gateForbidden = Call POST "/api/mentor/jobs/job-005/ai-gate" @{ threshold = 4 } $fatimaToken
+Assert "non-mentor cannot set gate" ($gateForbidden.status -eq 403)
+
+$gateOn = Call POST "/api/mentor/jobs/job-005/ai-gate" @{ threshold = 5 } $mentorToken
+Assert "mentor enables gate at 5/5" ($gateOn.status -eq 200)
+
+$finalApprove = Call POST "/api/milestones/ms-013/approve" $null $mentorToken
+Assert "final milestone blocked with no review" ($finalApprove.status -eq 400 -and $finalApprove.error -like "*No AI review*")
+
+$nonFinalApprove = Call POST "/api/milestones/ms-012/approve" $null $mentorToken
+Assert "non-final milestone not gated" ($nonFinalApprove.status -eq 200)
+
+$gateReview = Call POST "/api/ai/github/repos/$gateRepoId/review" $null $fatimaToken
+Assert "gate review runs" ($gateReview.status -eq 200 -and $gateReview.json.status -eq "done")
+$gateRating = [int]$gateReview.json.rating
+
+if ($gateRating -lt 5) {
+  $belowApprove = Call POST "/api/milestones/ms-013/approve" $null $mentorToken
+  Assert "final milestone blocked below threshold" ($belowApprove.status -eq 400 -and $belowApprove.error -like "*below the required*")
+} else {
+  Write-Host "  (skip) AI rated the mock diff 5/5"
+}
+
+$gateOne = Call POST "/api/mentor/jobs/job-005/ai-gate" @{ threshold = 1 } $mentorToken
+Assert "mentor lowers gate to 1/5" ($gateOne.status -eq 200)
+$finalPass = Call POST "/api/milestones/ms-013/approve" $null $mentorToken
+Assert "final milestone approved with passing review" ($finalPass.status -eq 200)
+
+$job005 = Call GET "/api/jobs/job-005" $null $mentorToken
+Assert "gate visible on job detail" ($job005.json.aiGateThreshold -eq 1)
+$null = Call DELETE "/api/ai/github/repos/$gateRepoId" $null $fatimaToken
 
 Write-Host "`n======================"
 Write-Host "RESULT: $($script:pass) passed, $($script:fail) failed" -ForegroundColor $(if ($script:fail -eq 0) { "Green" } else { "Red" })

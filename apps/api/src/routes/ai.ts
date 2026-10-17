@@ -3,8 +3,9 @@ import { z } from "zod";
 import { eq, desc, gt, and } from "drizzle-orm";
 import { jobs, aiRepos, reviewRuns } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
-import { encryptToken } from "../lib/crypto";
-import { runReviewForRepo } from "../lib/reviewEngine";
+import { encryptToken, verifyHmacHex } from "../lib/crypto";
+import { runReviewForRepo, handleWebhookEvent, type WebhookPayload } from "../lib/reviewEngine";
+import { getAuthenticatedUser } from "../lib/githubClient";
 import { AI_MODEL } from "../lib/aiModel";
 import type { AppEnv } from "../types";
 
@@ -68,6 +69,29 @@ const SAMPLE_BRIEF = {
 
 export function aiRoutes() {
   const app = new Hono<AppEnv>();
+
+  // GitHub webhook (public — HMAC-verified with X-Hub-Signature-256).
+  // Registered before authMiddleware because GitHub cannot send our JWT.
+  app.post("/github/webhook", async (c) => {
+    const secret = c.env.GH_WEBHOOK_SECRET;
+    if (!secret) return c.json({ error: "Webhook secret not configured" }, 503);
+
+    const signature = c.req.header("x-hub-signature-256") || "";
+    const raw = await c.req.text();
+    const valid = await verifyHmacHex(raw, secret, signature);
+    if (!valid) return c.json({ error: "Invalid signature" }, 401);
+
+    let payload: WebhookPayload;
+    try {
+      payload = JSON.parse(raw) as WebhookPayload;
+    } catch {
+      return c.json({ error: "Invalid JSON" }, 400);
+    }
+
+    c.executionCtx.waitUntil(handleWebhookEvent(c.env, payload));
+    return c.json({ ok: true });
+  });
+
   app.use("*", authMiddleware);
 
   // Conversational assistant: owner mode (formulate job ideas) and
@@ -172,6 +196,13 @@ Business description: ${parsed.data.description}`;
 
     const id = crypto.randomUUID();
     const tokenEnc = await encryptToken(parsed.data.token, c.env.JWT_SECRET);
+    let ghLogin: string | null = null;
+    try {
+      const me = await getAuthenticatedUser(c.env, parsed.data.token);
+      ghLogin = me.login;
+    } catch {
+      ghLogin = null;
+    }
     await db.insert(aiRepos).values({
       id,
       userId: user.id,
@@ -180,6 +211,7 @@ Business description: ${parsed.data.description}`;
       branch: parsed.data.branch || "main",
       tokenEnc,
       jobId: parsed.data.jobId,
+      ghLogin,
     });
 
     return c.json({ ok: true, id }, 201);

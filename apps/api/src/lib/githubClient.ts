@@ -47,6 +47,131 @@ export interface GhComment {
   html_url: string;
 }
 
+export interface GhUser {
+  login: string;
+}
+
+export interface GhPullRequest {
+  number: number;
+  title: string;
+  html_url: string;
+  head: { sha: string; ref: string };
+  base: { ref: string };
+  user: { login: string };
+}
+
+const MOCK_PR: GhPullRequest = {
+  number: 7,
+  title: "mock: add checkout discount tiers",
+  html_url: "https://github.com/testorg/testrepo/pull/7",
+  head: { sha: "mock-pr-sha-abcdef", ref: "feature/discount" },
+  base: { ref: "main" },
+  user: { login: "mock-owner" },
+};
+
+export async function getAuthenticatedUser(env: Env, token: string): Promise<GhUser> {
+  if (env.AI_GITHUB_MOCK === "1") return { login: "mock-owner" };
+  const res = await fetch("https://api.github.com/user", {
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`GitHub user: HTTP ${res.status}`);
+  return (await res.json()) as GhUser;
+}
+
+export async function getPullRequest(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  token: string
+): Promise<GhPullRequest> {
+  if (env.AI_GITHUB_MOCK === "1") return MOCK_PR;
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`, {
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json" },
+  });
+  if (!res.ok) throw new Error(`GitHub PR: HTTP ${res.status}`);
+  return (await res.json()) as GhPullRequest;
+}
+
+export async function getPrDiff(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  token: string
+): Promise<string> {
+  if (env.AI_GITHUB_MOCK === "1") return MOCK_DIFF;
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`, {
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github.diff" },
+  });
+  if (!res.ok) throw new Error(`GitHub PR diff: HTTP ${res.status}`);
+  return res.text();
+}
+
+export async function postPrReviewComment(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string,
+  token: string
+): Promise<GhComment> {
+  if (env.AI_GITHUB_MOCK === "1") {
+    return { html_url: `https://github.com/${owner}/${repo}/pull/${prNumber}#review` };
+  }
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ event: "COMMENT", body }),
+  });
+  if (!res.ok) throw new Error(`GitHub PR review: HTTP ${res.status}`);
+  return (await res.json()) as GhComment;
+}
+
+export async function postPrInlineComment(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commitId: string,
+  file: string,
+  line: number,
+  body: string,
+  token: string
+): Promise<GhComment> {
+  if (env.AI_GITHUB_MOCK === "1") {
+    return { html_url: `https://github.com/${owner}/${repo}/pull/${prNumber}#discussion_r` };
+  }
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/comments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ body, commit_id: commitId, path: file, line, side: "RIGHT" }),
+  });
+  if (!res.ok) throw new Error(`GitHub inline comment: HTTP ${res.status}`);
+  return (await res.json()) as GhComment;
+}
+
+export async function postPrFormalReview(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  event: "APPROVE" | "REQUEST_CHANGES",
+  body: string,
+  token: string
+): Promise<{ state: string; html_url: string }> {
+  if (env.AI_GITHUB_MOCK === "1") {
+    return { state: event, html_url: `https://github.com/${owner}/${repo}/pull/${prNumber}#review` };
+  }
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ event, body }),
+  });
+  if (!res.ok) throw new Error(`GitHub formal review: HTTP ${res.status}`);
+  return (await res.json()) as { state: string; html_url: string };
+}
+
 export async function getLatestCommit(
   env: Env,
   owner: string,
