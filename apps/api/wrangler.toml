@@ -1,0 +1,27 @@
+name = "skillbridge-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+# Local/dev only. In production set the real secret with:
+#   wrangler secret put JWT_SECRET
+[vars]
+ENVIRONMENT = "development"
+FRONTEND_URL = "http://localhost:3000"
+JWT_SECRET = "dev-only-secret-change-me"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "skillbridge"
+# Replace with the real database_id from `wrangler d1 create skillbridge` before deploying.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "skillbridge-uploads"
+
+[ai]
+binding = "AI"
+
+# Uncomment for production (custom domain / Pages origin):
+# [vars]
+# FRONTEND_URL = "https://skillbridge.pages.dev"

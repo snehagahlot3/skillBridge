@@ -1,0 +1,24 @@
+import type { DB } from "./db";
+
+export interface Env {
+  DB: D1Database;
+  BUCKET: R2Bucket;
+  AI: any;
+  JWT_SECRET: string;
+  FRONTEND_URL: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "sme" | "student" | "mentor" | "admin";
+}
+
+export interface Variables {
+  db: DB;
+  env: Env;
+  user: AuthUser;
+}
+
+export type AppEnv = { Bindings: Env; Variables: Variables };
