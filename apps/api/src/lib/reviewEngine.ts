@@ -110,7 +110,7 @@ export async function reviewDiff(
         { role: "system", content: REVIEW_SYSTEM },
         { role: "user", content: `Review this git diff:\n\n${chunk}` },
       ],
-      max_tokens: 4096,
+      max_tokens: 65536,
     });
     const text = aiResponseText(response);
     const parsed = parseReport(text);

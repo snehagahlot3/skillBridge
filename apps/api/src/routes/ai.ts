@@ -132,7 +132,7 @@ export function aiRoutes() {
     try {
       const response = await c.env.AI.run(AI_MODEL, {
         messages,
-        max_tokens: 1024,
+        max_tokens: 8192,
       });
       const text = aiResponseText(response);
       return c.json({ reply: text || CHAT_FALLBACK });
@@ -164,7 +164,7 @@ Business description: ${parsed.data.description}`;
 
       const response = await c.env.AI.run(AI_MODEL, {
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 3072,
+        max_tokens: 8192,
       });
 
       const text = aiResponseText(response); const jsonMatch = text.match(/\{[\s\S]*\}/);
