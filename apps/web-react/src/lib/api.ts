@@ -99,6 +99,21 @@ export interface Job {
   team?: TeamMember[];
   updates?: JobUpdate[];
   reviews?: JobReview[];
+  aiRepos?: {
+    id: string;
+    owner: string;
+    repo: string;
+    branch: string;
+    lastReviewedSha: string | null;
+    lastRun: {
+      commitSha: string;
+      status: "running" | "done" | "failed";
+      rating: number | null;
+      summary: string | null;
+      commentUrl: string | null;
+      createdAt: string;
+    } | null;
+  }[];
   myRole?: "owner" | "team" | "mentor" | "admin" | null;
 }
 
@@ -252,6 +267,8 @@ export interface AiRepo {
   repo: string;
   branch: string;
   status: "active" | "paused";
+  jobId: string | null;
+  jobTitle: string | null;
   lastReviewedSha: string | null;
   createdAt: string;
   lastRun: {
@@ -682,7 +699,7 @@ class ApiClient {
     });
   }
 
-  aiGithubConnect(data: { owner: string; repo: string; token: string; branch?: string }) {
+  aiGithubConnect(data: { owner: string; repo: string; token: string; branch?: string; jobId?: string }) {
     return this.fetch("/ai/github/repos", { method: "POST", body: JSON.stringify(data) });
   }
 

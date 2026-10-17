@@ -209,6 +209,36 @@ export default function JobDetail() {
           <UpdatesSection jobId={job.id} updates={updates} onPosted={() => loadUpdates(job.id)} onError={setToast} />
         )}
 
+        {(job.aiRepos ?? []).length > 0 && isParticipant && (
+          <div className="card">
+            <h3 className="font-semibold text-lg mb-4">AI code reviews</h3>
+            <div className="space-y-2">
+              {job.aiRepos!.map((r) => (
+                <div key={r.id} className="rounded-lg bg-gray-50 p-3 flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <p className="font-medium text-sm">
+                      {r.owner}/{r.repo} <span className="text-gray-500 font-normal">({r.branch})</span>
+                    </p>
+                    {r.lastRun && r.lastRun.status === "done" && r.lastRun.rating != null ? (
+                      <div className="flex items-center gap-2 mt-1">
+                        <Stars value={r.lastRun.rating} />
+                        <span className="text-xs text-gray-400">{r.lastRun.commitSha.slice(0, 7)}</span>
+                        {r.lastRun.commentUrl && (
+                          <a href={r.lastRun.commentUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">
+                            View comment
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-500 mt-1">No reviews yet.</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {job.status === "completed" && (
           <ReviewsSection job={job} team={team} me={user} onChanged={load} onError={setToast} />
         )}

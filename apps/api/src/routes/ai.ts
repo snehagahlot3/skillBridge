@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, gt, and } from "drizzle-orm";
 import { jobs, aiRepos, reviewRuns } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import { encryptToken } from "../lib/crypto";
@@ -42,6 +42,7 @@ const connectRepoSchema = z.object({
   repo: z.string().min(1).max(100),
   token: z.string().min(10).max(500),
   branch: z.string().min(1).max(100).optional(),
+  jobId: z.string().optional(),
 });
 
 const SAMPLE_BRIEF = {
@@ -160,6 +161,15 @@ Business description: ${parsed.data.description}`;
     const parsed = connectRepoSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
+    // Linking a repo to a job: only the job's owner may do it.
+    if (parsed.data.jobId) {
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
+      if (!job) return c.json({ error: "Job not found" }, 404);
+      if (job.ownerId !== user.id && user.role !== "admin") {
+        return c.json({ error: "Only the job owner can link a repo to this job" }, 403);
+      }
+    }
+
     const id = crypto.randomUUID();
     const tokenEnc = await encryptToken(parsed.data.token, c.env.JWT_SECRET);
     await db.insert(aiRepos).values({
@@ -169,6 +179,7 @@ Business description: ${parsed.data.description}`;
       repo: parsed.data.repo,
       branch: parsed.data.branch || "main",
       tokenEnc,
+      jobId: parsed.data.jobId,
     });
 
     return c.json({ ok: true, id }, 201);
@@ -192,12 +203,15 @@ Business description: ${parsed.data.description}`;
           .where(eq(reviewRuns.repoId, r.id))
           .orderBy(desc(reviewRuns.createdAt))
           .limit(1);
+        const [job] = r.jobId ? await db.select().from(jobs).where(eq(jobs.id, r.jobId)) : [undefined];
         return {
           id: r.id,
           owner: r.owner,
           repo: r.repo,
           branch: r.branch,
           status: r.status,
+          jobId: r.jobId,
+          jobTitle: job?.title || null,
           lastReviewedSha: r.lastReviewedSha,
           createdAt: r.createdAt,
           lastRun: lastRun
@@ -226,6 +240,17 @@ Business description: ${parsed.data.description}`;
     if (!repo) return c.json({ error: "Repo not found" }, 404);
     if (repo.userId !== user.id && user.role !== "admin") {
       return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // Daily review cap (protects the AI free tier)
+    const today = new Date().toISOString().slice(0, 10);
+    const todayRuns = await db
+      .select()
+      .from(reviewRuns)
+      .where(and(eq(reviewRuns.repoId, id), gt(reviewRuns.createdAt, today)));
+    const cap = Number(c.env.AI_GH_DAILY_CAP || "5");
+    if (todayRuns.length >= cap) {
+      return c.json({ error: `Daily review limit reached (${cap}/day). Try again tomorrow.` }, 429);
     }
 
     const run = await runReviewForRepo(c.env, db, repo);

@@ -1,22 +1,25 @@
 import { useEffect, useState } from "react";
 import { GitBranch, RefreshCw, Trash2 } from "lucide-react";
-import { api, type AiRepo, type ReviewRun } from "../lib/api";
+import { api, type AiRepo, type Job, type ReviewRun } from "../lib/api";
 import { Stars } from "./ui";
 
 export default function CodeReviews() {
   const [repos, setRepos] = useState<AiRepo[]>([]);
+  const [myJobs, setMyJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ owner: "", repo: "", token: "", branch: "main" });
+  const [form, setForm] = useState({ owner: "", repo: "", token: "", branch: "main", jobId: "" });
   const [formError, setFormError] = useState("");
   const [openRepo, setOpenRepo] = useState<string | null>(null);
   const [runs, setRuns] = useState<ReviewRun[]>([]);
 
   async function load() {
     try {
-      setRepos(await api.aiGithubRepos());
+      const [repoList, jobs] = await Promise.all([api.aiGithubRepos(), api.getJobs({ mine: true })]);
+      setRepos(repoList);
+      setMyJobs(jobs);
     } catch (err) {
       setToast((err as Error).message);
     } finally {
@@ -33,9 +36,15 @@ export default function CodeReviews() {
     setBusy(true);
     setFormError("");
     try {
-      await api.aiGithubConnect({ owner: form.owner, repo: form.repo, token: form.token, branch: form.branch || undefined });
+      await api.aiGithubConnect({
+        owner: form.owner,
+        repo: form.repo,
+        token: form.token,
+        branch: form.branch || undefined,
+        jobId: form.jobId || undefined,
+      });
       setShowForm(false);
-      setForm({ owner: "", repo: "", token: "", branch: "main" });
+      setForm({ owner: "", repo: "", token: "", branch: "main", jobId: "" });
       setToast("Repo connected. Press 'Review now' to run the first review.");
       await load();
     } catch (err) {
@@ -125,6 +134,15 @@ export default function CodeReviews() {
               <label className="label">Branch to watch</label>
               <input className="input" placeholder="main" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} />
             </div>
+            <div>
+              <label className="label">Link to a job (optional — reviews appear in its progress timeline)</label>
+              <select className="input" value={form.jobId} onChange={(e) => setForm({ ...form, jobId: e.target.value })}>
+                <option value="">No job link</option>
+                {myJobs.map((j) => (
+                  <option key={j.id} value={j.id}>{j.title} ({j.status})</option>
+                ))}
+              </select>
+            </div>
             <div className="flex gap-2">
               <button className="btn-primary" disabled={busy || !form.owner || !form.repo || form.token.length < 10} onClick={connect}>
                 {busy ? "Connecting..." : "Connect"}
@@ -144,6 +162,7 @@ export default function CodeReviews() {
                   <GitBranch className="w-4 h-4 text-gray-400" />
                   {repo.owner}/{repo.repo}
                   <span className="text-sm text-gray-500 font-normal">({repo.branch})</span>
+                  {repo.jobTitle && <span className="badge bg-brand-50 text-brand-700">↳ {repo.jobTitle}</span>}
                 </p>
                 {repo.lastRun ? (
                   <div className="flex items-center gap-2 mt-2 flex-wrap">

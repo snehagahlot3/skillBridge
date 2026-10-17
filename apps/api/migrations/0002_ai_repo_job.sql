@@ -1,0 +1,1 @@
+ALTER TABLE `ai_repos` ADD `job_id` text REFERENCES `jobs`(`id`);

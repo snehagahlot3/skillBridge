@@ -322,18 +322,27 @@ $aiNoAuth = Call POST "/api/ai/chat" @{ mode = "owner"; message = "Should be blo
 Assert "ai chat requires auth" ($aiNoAuth.status -eq 401)
 
 Write-Host "`n=== 12. GitHub code-review agent (mock mode) ==="
-$connect = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789" } $rajeshToken
-Assert "connect repo" ($connect.status -eq 201)
+$connect = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789"; jobId = $jobId } $rajeshToken
+Assert "connect repo linked to my job" ($connect.status -eq 201)
 $repoId = $connect.json.id
 
 $reposList = Call GET "/api/ai/github/repos" $null $rajeshToken
 Assert "repos listed" ($reposList.ok -and $reposList.json.Count -eq 1 -and $reposList.json[0].owner -eq "testorg")
+Assert "repo linked to job title" ($reposList.json[0].jobId -eq $jobId -and $reposList.json[0].jobTitle)
 Assert "token not leaked" (-not ($reposList.json[0].PSObject.Properties.Name -contains "tokenEnc") -and $reposList.Content -notmatch "ghp_mock")
+
+$foreignLink = Call POST "/api/ai/github/repos" @{ owner = "x"; repo = "y"; token = "ghp_mocktoken123456789"; jobId = $jobId } $priyaToken
+Assert "non-owner cannot link to job" ($foreignLink.status -eq 403)
 
 $review = Call POST "/api/ai/github/repos/$repoId/review" $null $rajeshToken
 Assert "review now runs" ($review.status -eq 200 -and $review.json.status -eq "done")
 Assert "review has sha/rating/findings/comment" ($review.json.commitSha -and $review.json.rating -ge 1 -and $review.json.rating -le 5 -and $review.json.findings -is [System.Array] -and $review.json.commentUrl)
 Assert "review summary non-empty" ($review.json.summary.Length -gt 10)
+
+$jobUpdates = Call GET "/api/jobs/$jobId/updates" $null $rajeshToken
+Assert "review posted to job timeline" (($jobUpdates.json | Where-Object { $_.content -like "*AI code review*" }))
+$jobDetail = Call GET "/api/jobs/$jobId" $null $rajeshToken
+Assert "job detail lists linked repo" ($jobDetail.json.aiRepos.Count -eq 1 -and $jobDetail.json.aiRepos[0].lastRun.status -eq "done")
 
 $runs = Call GET "/api/ai/github/repos/$repoId/runs" $null $rajeshToken
 Assert "runs history" ($runs.ok -and $runs.json.Count -ge 1 -and $runs.json[0].status -eq "done")

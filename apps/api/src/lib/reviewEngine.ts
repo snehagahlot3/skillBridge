@@ -3,7 +3,7 @@
 // Workers AI review per chunk, and aggregates the reports.
 
 import { eq } from "drizzle-orm";
-import { aiRepos, reviewRuns } from "../db/schema";
+import { aiRepos, reviewRuns, jobs, jobUpdates } from "../db/schema";
 import type { DB } from "../db";
 import { createDb } from "../db";
 import { decryptToken } from "./crypto";
@@ -232,6 +232,33 @@ export async function runReviewForRepo(
       .update(aiRepos)
       .set({ lastReviewedSha: outcome.sha })
       .where(eq(aiRepos.id, repo.id));
+
+    // If the repo is linked to a job, surface the review in the job's
+    // progress timeline (visible to owner, team and mentor).
+    if (repo.jobId && outcome.report) {
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, repo.jobId));
+      if (job) {
+        const report = outcome.report;
+        const topFindings = report.findings
+          .slice(0, 3)
+          .map((f) => `[${f.severity}] ${f.file}${f.line ? ":" + f.line : ""} — ${f.issue}`)
+          .join(" · ");
+        await db.insert(jobUpdates).values({
+          id: crypto.randomUUID(),
+          jobId: repo.jobId,
+          authorId: repo.userId,
+          kind: "update",
+          content: [
+            `🤖 AI code review: ${report.rating}/5 for commit \`${outcome.sha.slice(0, 7)}\` (${repo.owner}/${repo.repo})`,
+            report.summary,
+            topFindings,
+            commentUrl,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+      }
+    }
 
     const [run] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, runId));
     return run;

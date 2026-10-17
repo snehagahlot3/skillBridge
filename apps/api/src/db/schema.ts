@@ -185,6 +185,7 @@ export const aiRepos = sqliteTable("ai_repos", {
   repo: text("repo").notNull(),
   branch: text("branch").default("main").notNull(),
   tokenEnc: text("token_enc").notNull(), // AES-GCM iv+ciphertext, base64
+  jobId: text("job_id").references(() => jobs.id),
   lastReviewedSha: text("last_reviewed_sha"),
   status: text("status", { enum: ["active", "paused"] })
     .default("active")

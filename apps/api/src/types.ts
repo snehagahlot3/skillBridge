@@ -8,6 +8,7 @@ export interface Env {
   JWT_SECRET: string;
   FRONTEND_URL: string;
   AI_GITHUB_MOCK?: string;
+  AI_GH_DAILY_CAP?: string;
 }
 
 export interface AuthUser {
