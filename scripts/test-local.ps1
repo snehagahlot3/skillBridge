@@ -16,7 +16,7 @@ function Assert($name, $condition) {
 function Call($method, $path, $body = $null, $token = $null) {
   $headers = @{}
   if ($token) { $headers["Authorization"] = "Bearer $token" }
-  $params = @{ Uri = "$Base$path"; Method = $method; Headers = $headers; UseBasicParsing = $true; TimeoutSec = 20 }
+  $params = @{ Uri = "$Base$path"; Method = $method; Headers = $headers; UseBasicParsing = $true; TimeoutSec = 120 }
   if ($null -ne $body) {
     $params["ContentType"] = "application/json"
     $params["Body"] = ($body | ConvertTo-Json -Depth 10)
@@ -390,7 +390,7 @@ $pushRes = Send-Webhook $pushPayload
 Assert "webhook push accepted" ($pushRes.status -eq 200)
 
 $pushReviewed = $false
-for ($i = 0; $i -lt 30; $i++) {
+for ($i = 0; $i -lt 60; $i++) {
   $runsNow = (Call GET "/api/ai/github/repos/$repo2Id/runs" $null $rajeshToken).json
   if ($runsNow.Count -gt $runsBefore) { $pushReviewed = $true; break }
   Start-Sleep -Seconds 1
@@ -402,7 +402,7 @@ $prRes = Send-Webhook $prPayload
 Assert "webhook PR opened accepted" ($prRes.status -eq 200)
 
 $prReviewed = $false
-for ($i = 0; $i -lt 40; $i++) {
+for ($i = 0; $i -lt 90; $i++) {
   $prRuns = (Call GET "/api/ai/github/repos/$repo2Id/runs" $null $rajeshToken).json
   if ($prRuns | Where-Object { $_.kind -eq "pr" -and $_.status -eq "done" }) { $prReviewed = $true; break }
   Start-Sleep -Seconds 1

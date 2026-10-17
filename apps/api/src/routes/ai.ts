@@ -6,7 +6,7 @@ import { authMiddleware, requireRole } from "../middleware/auth";
 import { encryptToken, verifyHmacHex } from "../lib/crypto";
 import { runReviewForRepo, handleWebhookEvent, type WebhookPayload } from "../lib/reviewEngine";
 import { getAuthenticatedUser } from "../lib/githubClient";
-import { AI_MODEL } from "../lib/aiModel";
+import { AI_MODEL, aiResponseText } from "../lib/aiModel";
 import type { AppEnv } from "../types";
 
 const briefSchema = z.object({
@@ -132,9 +132,10 @@ export function aiRoutes() {
     try {
       const response = await c.env.AI.run(AI_MODEL, {
         messages,
-        max_tokens: 700,
+        max_tokens: 1024,
       });
-      return c.json({ reply: response.response });
+      const text = aiResponseText(response);
+      return c.json({ reply: text || CHAT_FALLBACK });
     } catch (error) {
       console.error("AI chat failed:", error);
       return c.json({ reply: CHAT_FALLBACK });
@@ -163,10 +164,10 @@ Business description: ${parsed.data.description}`;
 
       const response = await c.env.AI.run(AI_MODEL, {
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 1024,
+        max_tokens: 3072,
       });
 
-      const jsonMatch = response.response.match(/\{[\s\S]*\}/);
+      const text = aiResponseText(response); const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("No JSON in response");
 
       const brief = JSON.parse(jsonMatch[0]);

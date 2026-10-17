@@ -10,7 +10,7 @@ import { decryptToken } from "./crypto";
 import * as gh from "./githubClient";
 import type { GhPullRequest } from "./githubClient";
 import type { Env } from "../types";
-import { AI_MODEL } from "./aiModel";
+import { AI_MODEL, aiResponseText } from "./aiModel";
 
 const CHUNK_CHARS = 3500;
 const MAX_CHUNKS = 6;
@@ -110,11 +110,12 @@ export async function reviewDiff(
         { role: "system", content: REVIEW_SYSTEM },
         { role: "user", content: `Review this git diff:\n\n${chunk}` },
       ],
-      max_tokens: 1024,
+      max_tokens: 4096,
     });
-    const parsed = parseReport(response.response);
+    const text = aiResponseText(response);
+    const parsed = parseReport(text);
     if (parsed) reports.push(parsed);
-    tokensUsed += chunk.length + (response.response?.length ?? 0);
+    tokensUsed += chunk.length + text.length;
   }
 
   if (!reports.length) {

@@ -5,36 +5,41 @@
 import type { Env } from "../types";
 
 const MOCK_SHA = "mock-sha-1234567";
-const MOCK_DIFF = `diff --git a/src/checkout.ts b/src/checkout.ts
+const MOCK_DIFF = `diff --git a/src/pricing.ts b/src/pricing.ts
 index 12f..a3c 100644
---- a/src/checkout.ts
-+++ b/src/checkout.ts
-@@ -10,6 +10,12 @@ export function applyDiscount(total: number, code: string): number {
-   if (code === "WELCOME10") {
-     return total * 0.9;
+--- a/src/pricing.ts
++++ b/src/pricing.ts
+@@ -5,4 +5,8 @@ export function calculatePrice(items) {
+   let total = 0;
+   for (const item of items) {
++    // apply volume discount
++    if (total > 1000) {
++      total = total * 0.9;
++    }
+     total += item.price * item.quantity;
    }
-+  // apply tiered discount
-+  if (total > 5000) {
-+    total = total * 0.85;
-+  }
    return total;
  }
 +
-+export async function fetchOrder(id: string) {
-+  const res = await fetch("https://api.shop.example/orders/" + id);
-+  return res.json();
++export function formatPrice(price) {
++  if (price == undefined) return "N/A";
++  return "$" + price;
 +}
-diff --git a/src/auth.ts b/src/auth.ts
+diff --git a/src/cart.ts b/src/cart.ts
 index b2c..d4e 100644
---- a/src/auth.ts
-+++ b/src/auth.ts
-@@ -3,4 +3,9 @@ export function isAdmin(user: { role?: string }) {
-   return user.role === "admin";
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -3,4 +3,9 @@ export function addItem(cart, item) {
+   cart.items.push(item);
+   return cart;
  }
 +
-+export function login(email: string, password: string) {
-+  const query = "SELECT * FROM users WHERE email = '" + email + "' AND password = '" + password + "'";
-+  return db.query(query);
++export function getCartTotal(cart) {
++  let sum = 0;
++  for (const item of cart.items) {
++    sum += item.price * item.qty;
++  }
++  return sum;
 +}
 `;
 
