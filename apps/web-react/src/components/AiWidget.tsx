@@ -2,11 +2,16 @@ import { useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import Assistant from "./Assistant";
 import { useAiContext } from "../context/AiContext";
+import { useAuth } from "../context/AuthContext";
 
 // Global AI assistant: floating button (bottom-right) on every page.
+// Hidden until the user is signed in.
 export default function AiWidget() {
   const [open, setOpen] = useState(false);
   const { job } = useAiContext();
+  const { user, loading } = useAuth();
+
+  if (loading || !user) return null;
 
   return (
     <>
