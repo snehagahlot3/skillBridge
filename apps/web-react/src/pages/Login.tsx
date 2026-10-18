@@ -51,13 +51,6 @@ export default function Login() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
-        <div className="mt-6 rounded-[8px] border border-line bg-bg/70 p-4 text-xs text-muted space-y-1">
-          <p className="font-semibold text-ink mb-1">Demo logins</p>
-          <p>User — priya@demo.com / demo12345</p>
-          <p>Owner — rajesh@demo.com / demo12345</p>
-          <p>Mentor — mentor@demo.com / mentor12345</p>
-          <p>Admin — admin@demo.com / admin12345</p>
-        </div>
         <p className="mt-6 text-sm text-center text-muted">
           No account? <Link to="/signup" className="text-accent hover:underline font-medium">Sign up</Link>
         </p>

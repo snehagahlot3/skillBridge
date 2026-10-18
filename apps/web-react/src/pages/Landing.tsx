@@ -33,7 +33,6 @@ export default function Landing() {
         <div className="grid md:grid-cols-3 gap-6 mt-4">
           <Link to="/signup" className="card-clickable flex flex-col justify-between">
             <div>
-              <div className="label-accent mb-3">01</div>
               <h2 className="heading-card mb-2">Post a job</h2>
               <p className="text-sm text-muted leading-relaxed">
                 Marketing campaigns, content, video editing, web design, software — post it with a
@@ -44,7 +43,6 @@ export default function Landing() {
 
           <Link to="/signup" className="card-clickable flex flex-col justify-between">
             <div>
-              <div className="label-accent mb-3">02</div>
               <h2 className="heading-card mb-2">Work on jobs</h2>
               <p className="text-sm text-muted leading-relaxed">
                 Submit your quote and ideas, get hired, chat with the business, and build a public
@@ -55,7 +53,6 @@ export default function Landing() {
 
           <div className="card flex flex-col justify-between">
             <div>
-              <div className="label-accent mb-3">03</div>
               <h2 className="heading-card mb-2">Mentors guide</h2>
               <p className="text-sm text-muted leading-relaxed">
                 Mentors pick live jobs to mentor, track progress, join the conversation, and help
@@ -63,10 +60,6 @@ export default function Landing() {
               </p>
             </div>
           </div>
-        </div>
-
-        <div className="mt-20 text-center">
-          <p className="text-xs text-muted">Sample data — Phase 1 demo</p>
         </div>
       </main>
     </div>
