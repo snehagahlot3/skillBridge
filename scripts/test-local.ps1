@@ -537,6 +537,15 @@ Assert "job created with attachments" ($attachJob.status -eq 201 -and $attachJob
 $mentorChat = Call POST "/api/ai/chat" @{ mode = "mentor"; jobId = "job-005"; message = "How should I review the 3D renders milestone?" } $meeraToken
 Assert "mentor mode ai chat" ($mentorChat.status -eq 200 -and $mentorChat.json.reply.Length -gt 20)
 
+$studentChat = Call POST "/api/ai/chat" @{ mode = "student"; jobId = "job-004"; message = "What did I propose for this job and what is my quote?" } $rajeshToken
+Assert "student chat has proposal + page context" ($studentChat.status -eq 200 -and $studentChat.json.reply.Length -gt 20)
+
+$ownerChat = Call POST "/api/ai/chat" @{ mode = "owner"; jobId = "job-001"; message = "Summarize the proposals I received on this job." } $rajeshToken
+Assert "owner chat has job page context" ($ownerChat.status -eq 200 -and $ownerChat.json.reply.Length -gt 20)
+
+$outsiderChat = Call POST "/api/ai/chat" @{ mode = "student"; jobId = "job-002"; message = "What do you know about this job?" } $priyaToken
+Assert "non-participant student chat sees public context only" ($outsiderChat.status -eq 200 -and $outsiderChat.json.reply.Length -gt 20)
+
 $releaseForQueue = Call POST "/api/mentor/jobs/job-005/release" $null $mentorToken
 Assert "mentor releases job-005 for queue test" ($releaseForQueue.status -eq 200)
 $queueOrdered = Call GET "/api/mentor/queue" $null $mentorToken

@@ -7,6 +7,7 @@ import { encryptToken, verifyHmacHex } from "../lib/crypto";
 import { runReviewForRepo, handleWebhookEvent, type WebhookPayload } from "../lib/reviewEngine";
 import { getAuthenticatedUser } from "../lib/githubClient";
 import { AI_MODEL, aiResponseText } from "../lib/aiModel";
+import { buildChatContext } from "../lib/chatContext";
 import type { AppEnv, AuthUser } from "../types";
 
 const briefSchema = z.object({
@@ -28,6 +29,7 @@ const OWNER_SYSTEM = `You are SkillBridge's job-scoping assistant for small busi
 You help a business owner turn a rough idea into a clear, well-scoped job posting for student/freelancer talent.
 Guide them step by step to clarify: the goal, the deliverables, the skills needed, the timeline, and a sensible budget range.
 When they are ready, summarize a crisp job brief with: title, description, required skills, budget suggestion (in INR), deadline suggestion and milestones.
+If a job page context is provided, the owner is viewing one of their EXISTING jobs — then answer questions about that job (its proposals, hired team, milestones, timeline, reviews, chats) instead of scoping a new job.
 Ask ONE focused question at a time if the idea is still vague. Keep replies short, practical and friendly.`;
 
 const STUDENT_SYSTEM = `You are SkillBridge's student assistant.
@@ -39,6 +41,10 @@ const MENTOR_SYSTEM = `You are SkillBridge's mentor assistant.
 You help a MENTOR guide hired students on a job: suggest how to break work down, what to check in milestone submissions, what feedback to give, and when to ask for revisions vs approve.
 Use the job details provided. Be practical, constructive and specific.
 Keep replies short, structured and practical.`;
+
+const CONTEXT_RULE = `You have been given the full context of the person talking to you and the page they are viewing: their profile, the job posting, their proposal/quote, the team, mentor, milestones, progress timeline, linked GitHub repositories with AI code-review history, and the chat transcripts they are allowed to see.
+Use it actively. Answer questions about THIS specific job by referencing the actual names, amounts, dates, statuses, findings and messages from the context. If the user asks about their proposal, quote, or anything on this page, base your answer on the context, not on guesses.
+Never invent facts that are not in the context — if the context does not cover something, say so honestly.`;
 
 const CHAT_FALLBACK =
   "I'm sorry, the AI service is unavailable right now. Try again in a moment — meanwhile, you can draft your job with the description, required skills, budget range and deadline fields in the form.";
@@ -99,51 +105,28 @@ export function aiRoutes() {
 
   app.use("*", authMiddleware);
 
-  // Conversational assistant: owner mode (formulate job ideas) and
-  // student mode (understand a problem statement).
+  // Conversational assistant: owner / student / mentor modes. The model
+  // receives the caller's profile plus the full context of the page they
+  // are on (job, their proposal, team, mentor, milestones, timeline,
+  // linked repos + AI review history, and chats they can access).
   app.post("/chat", async (c) => {
     const db = c.var.db;
     const body = await c.req.json();
     const parsed = chatSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-    let system = OWNER_SYSTEM;
-    if (parsed.data.mode === "mentor") {
-      let context = "No specific job selected.";
-      if (parsed.data.jobId) {
-        const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
-        if (job) {
-          context = [
-            `Job title: ${job.title}`,
-            `Description: ${job.description}`,
-            `Required skills: ${JSON.parse(job.requiredSkills || "[]").join(", ") || "not listed"}`,
-            `Budget range: ₹${job.budgetMin ?? "?"} - ₹${job.budgetMax ?? "?"}`,
-            `Deadline: ${job.deadline ?? "flexible"}`,
-            job.acceptanceCriteria ? `Acceptance criteria: ${job.acceptanceCriteria}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n");
-        }
-      }
-      system = `${MENTOR_SYSTEM}\n\nJOB POSTING:\n${context}`;
-    } else if (parsed.data.mode === "student") {
-      let context = "No specific job selected.";
-      if (parsed.data.jobId) {
-        const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
-        if (job) {
-          context = [
-            `Job title: ${job.title}`,
-            `Description: ${job.description}`,
-            `Required skills: ${JSON.parse(job.requiredSkills || "[]").join(", ") || "not listed"}`,
-            `Budget range: ₹${job.budgetMin ?? "?"} - ₹${job.budgetMax ?? "?"}`,
-            `Deadline: ${job.deadline ?? "flexible"}`,
-            job.acceptanceCriteria ? `Acceptance criteria: ${job.acceptanceCriteria}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n");
-        }
-      }
-      system = `${STUDENT_SYSTEM}\n\nJOB POSTING:\n${context}`;
+    const { mode, jobId } = parsed.data;
+    const context = await buildChatContext(c.env, db, c.get("user"), jobId, mode);
+
+    let system: string;
+    if (mode === "mentor") {
+      system = `${MENTOR_SYSTEM}\n\n${CONTEXT_RULE}\n\nPAGE CONTEXT:\n${context}`;
+    } else if (mode === "student") {
+      system = `${STUDENT_SYSTEM}\n\n${CONTEXT_RULE}\n\nPAGE CONTEXT:\n${context}`;
+    } else {
+      system = jobId
+        ? `${OWNER_SYSTEM}\n\n${CONTEXT_RULE}\n\nPAGE CONTEXT:\n${context}`
+        : OWNER_SYSTEM;
     }
 
     const messages: { role: string; content: string }[] = [
