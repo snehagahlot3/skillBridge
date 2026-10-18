@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "skills": {
+    "animated-infographic": {
+      "source": "iart-ai/data-animation-skills",
+      "sourceType": "github",
+      "skillPath": "skills/animated-infographic/SKILL.md",
+      "computedHash": "c57ec2e03f4da40f685ebaba18e1c28bfdc684fb7385d465569ae804455bc0ea"
+    },
+    "caption-animation": {
+      "source": "iart-ai/tiktok-video-skills",
+      "sourceType": "github",
+      "skillPath": "skills/caption-animation/SKILL.md",
+      "computedHash": "1bcfe2026d1b2a81ff7257d7149f4a555d6d28e238be909050c308bec85ea513"
+    },
+    "chart-animation": {
+      "source": "iart-ai/data-animation-skills",
+      "sourceType": "github",
+      "skillPath": "skills/chart-animation/SKILL.md",
+      "computedHash": "4aa51c0432356d74cc8e3e9a7e932bc5b31e90f603f1f744084b6a88a84b635c"
+    },
+    "countdown-video": {
+      "source": "iart-ai/tiktok-video-skills",
+      "sourceType": "github",
+      "skillPath": "skills/countdown-video/SKILL.md",
+      "computedHash": "5517971d5aa7c1dc683f68158c5bf973d101ca9d08f485ea8d99e4e68c4b3e85"
+    },
+    "lower-thirds": {
+      "source": "iart-ai/tiktok-video-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lower-thirds/SKILL.md",
+      "computedHash": "a56f20437e41c2e082ed6f3fb4fb044486b6c6fd1f6a875d3df037e0235f5aec"
+    },
+    "presentation-video": {
+      "source": "iart-ai/data-animation-skills",
+      "sourceType": "github",
+      "skillPath": "skills/presentation-video/SKILL.md",
+      "computedHash": "ec7dabce886cbe9e7566bfe880b21df5d8d1f9cbfdc3f0f5c8695830e5ebc01b"
+    },
+    "short-form-video": {
+      "source": "iart-ai/tiktok-video-skills",
+      "sourceType": "github",
+      "skillPath": "skills/short-form-video/SKILL.md",
+      "computedHash": "f2cb1610f64f2f3013ff20ef6acc4094bcd8de2c578098643f110926c7ef4df2"
+    }
+  }
+}

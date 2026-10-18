@@ -2,6 +2,11 @@ node_modules/
 .next/
 dist/
 out/
+!video/out/
+!video/out/skillbridge-demo.mp4
+!video/out/f-title.png
+!video/out/f-ai.png
+!video/out/f-end.png
 .env
 .env.local
 .dev.vars

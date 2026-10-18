@@ -1,0 +1,24 @@
+{
+  "name": "skillbridge-demo-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "2-minute narrated SkillBridge feature demo (Remotion)",
+  "scripts": {
+    "render": "remotion render SkillBridgeDemo out/skillbridge-demo.mp4",
+    "still": "remotion still SkillBridgeDemo",
+    "preview": "remotion studio"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/google-fonts": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0",
+    "@remotion/transitions": "^4.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "typescript": "^5.4.0"
+  }
+}
