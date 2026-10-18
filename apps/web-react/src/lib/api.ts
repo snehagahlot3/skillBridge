@@ -86,6 +86,7 @@ export interface Job {
   budgetMax: number | null;
   deadline: string | null;
   acceptanceCriteria: string | null;
+  attachments?: { key: string; name: string }[];
   status: JobStatus;
   mentorId: string | null;
   aiGateThreshold?: number | null;
@@ -100,21 +101,7 @@ export interface Job {
   team?: TeamMember[];
   updates?: JobUpdate[];
   reviews?: JobReview[];
-  aiRepos?: {
-    id: string;
-    owner: string;
-    repo: string;
-    branch: string;
-    lastReviewedSha: string | null;
-    lastRun: {
-      commitSha: string;
-      status: "running" | "done" | "failed";
-      rating: number | null;
-      summary: string | null;
-      commentUrl: string | null;
-      createdAt: string;
-    } | null;
-  }[];
+  aiRepos?: AiRepoRef[];
   myRole?: "owner" | "team" | "mentor" | "admin" | null;
 }
 
@@ -180,6 +167,7 @@ export interface JobUpdate {
   authorName?: string;
   authorRole?: string;
   milestoneTitle?: string | null;
+  attachments?: { key: string; name: string }[];
 }
 
 export interface JobReview {
@@ -262,6 +250,30 @@ export interface Brief {
   suggestedRubric: { criterion: string; description: string; maxScore: number }[];
 }
 
+export interface ReviewFinding {
+  file: string;
+  line: number | null;
+  severity: "critical" | "high" | "medium" | "low";
+  issue: string;
+  suggestion: string;
+}
+
+export interface ReviewRun {
+  id: string;
+  commitSha: string;
+  commitMessage: string | null;
+  status: "running" | "done" | "failed";
+  kind?: "commit" | "pr" | "repo";
+  prNumber?: number | null;
+  summary: string | null;
+  rating: number | null;
+  findings: ReviewFinding[];
+  suggestedFixes: string[];
+  commentUrl: string | null;
+  tokensUsed: number | null;
+  createdAt: string;
+}
+
 export interface AiRepo {
   id: string;
   owner: string;
@@ -282,28 +294,32 @@ export interface AiRepo {
   } | null;
 }
 
-export interface ReviewFinding {
-  file: string;
-  line: number | null;
-  severity: "critical" | "high" | "medium" | "low";
-  issue: string;
-  suggestion: string;
-}
-
-export interface ReviewRun {
+export interface AiRepoRef {
   id: string;
-  commitSha: string;
-  commitMessage: string | null;
-  status: "running" | "done" | "failed";
-  kind?: "commit" | "pr";
-  prNumber?: number | null;
-  summary: string | null;
-  rating: number | null;
-  findings: ReviewFinding[];
-  suggestedFixes: string[];
-  commentUrl: string | null;
-  tokensUsed: number | null;
-  createdAt: string;
+  owner: string;
+  repo: string;
+  branch: string;
+  lastReviewedSha: string | null;
+  lastRun: {
+    commitSha: string;
+    status: "running" | "done" | "failed";
+    rating: number | null;
+    summary: string | null;
+    commentUrl: string | null;
+    createdAt: string;
+  } | null;
+  runs: {
+    id: string;
+    kind: "commit" | "pr" | "repo";
+    prNumber: number | null;
+    commitSha: string;
+    commitMessage: string | null;
+    status: "running" | "done" | "failed";
+    rating: number | null;
+    summary: string | null;
+    commentUrl: string | null;
+    createdAt: string;
+  }[];
 }
 
 export interface MentorJob extends Job {
@@ -459,8 +475,9 @@ class ApiClient {
     budgetMax?: number;
     deadline?: string;
     acceptanceCriteria?: string;
+    attachments?: { key: string; name: string }[];
     milestones?: { title: string; dueDate?: string }[];
-  }) {
+  }): Promise<Job> {
     return this.fetch("/jobs", { method: "POST", body: JSON.stringify(data) });
   }
 
@@ -493,8 +510,8 @@ class ApiClient {
     return this.fetch(`/jobs/${id}/start`, { method: "POST" });
   }
 
-  deliverJob(id: string, content: string) {
-    return this.fetch(`/jobs/${id}/deliver`, { method: "POST", body: JSON.stringify({ content }) });
+  deliverJob(id: string, content: string, fileKeys?: string[]) {
+    return this.fetch(`/jobs/${id}/deliver`, { method: "POST", body: JSON.stringify({ content, fileKeys }) });
   }
 
   acceptJob(id: string) {
@@ -616,10 +633,6 @@ class ApiClient {
     return this.fetch(`/mentor/jobs/${id}/release`, { method: "POST" });
   }
 
-  mentorAiGate(id: string, threshold: number | null) {
-    return this.fetch(`/mentor/jobs/${id}/ai-gate`, { method: "POST", body: JSON.stringify({ threshold }) });
-  }
-
   // ---- admin ----
   adminGetStats(): Promise<AdminStats> {
     return this.fetch("/admin/stats");
@@ -695,7 +708,7 @@ class ApiClient {
 
   // ---- ai ----
   aiChat(
-    mode: "owner" | "student",
+    mode: "owner" | "student" | "mentor",
     message: string,
     history?: { role: "user" | "assistant"; content: string }[],
     jobId?: string
@@ -706,6 +719,35 @@ class ApiClient {
     });
   }
 
+  async uploadFile(file: File): Promise<{ key: string; name: string }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_BASE}/files`, {
+      method: "POST",
+      headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  }
+
+  async downloadFile(key: string) {
+    const res = await fetch(`${API_BASE}/files/${key}`, {
+      headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
+    });
+    if (!res.ok) throw new Error("Could not load file");
+    const blob = await res.blob();
+    window.open(URL.createObjectURL(blob), "_blank");
+  }
+
+  generateBrief(description: string, language: string = "en"): Promise<Brief> {
+    return this.fetch("/ai/project-brief", {
+      method: "POST",
+      body: JSON.stringify({ description, language }),
+    });
+  }
+
+  // ---- github agent ----
   aiGithubConnect(data: { owner: string; repo: string; token: string; branch?: string; jobId?: string }) {
     return this.fetch("/ai/github/repos", { method: "POST", body: JSON.stringify(data) });
   }
@@ -714,8 +756,11 @@ class ApiClient {
     return this.fetch("/ai/github/repos");
   }
 
-  aiGithubReview(repoId: string): Promise<ReviewRun> {
-    return this.fetch(`/ai/github/repos/${repoId}/review`, { method: "POST" });
+  aiGithubReview(repoId: string, scope: "latest" | "commits" | "repo" = "latest", count?: number): Promise<ReviewRun> {
+    return this.fetch(`/ai/github/repos/${repoId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ scope, count }),
+    });
   }
 
   aiGithubRuns(repoId: string): Promise<ReviewRun[]> {
@@ -726,11 +771,16 @@ class ApiClient {
     return this.fetch(`/ai/github/repos/${repoId}`, { method: "DELETE" });
   }
 
-  generateBrief(description: string, language: string = "en"): Promise<Brief> {
-    return this.fetch("/ai/project-brief", {
-      method: "POST",
-      body: JSON.stringify({ description, language }),
-    });
+  restartJob(id: string) {
+    return this.fetch(`/jobs/${id}/restart`, { method: "POST" });
+  }
+
+  mentorAiGate(id: string, threshold: number | null) {
+    return this.fetch(`/mentor/jobs/${id}/ai-gate`, { method: "POST", body: JSON.stringify({ threshold }) });
+  }
+
+  adminRejectBusiness(userId: string) {
+    return this.fetch(`/admin/businesses/${userId}/reject`, { method: "PATCH" });
   }
 }
 

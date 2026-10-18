@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { FileText, Github, Globe, Linkedin, MessageCircle } from "lucide-react";
+import { FileText, Github, Globe, Linkedin, MessageCircle, RefreshCw } from "lucide-react";
 import {
   api,
   budgetLabel,
@@ -12,24 +12,26 @@ import {
   type TeamMember,
 } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useAiContext } from "../context/AiContext";
 import { Modal, RatingInput, Stars, StatusBadge, VerifiedBadge } from "../components/ui";
-import Assistant from "../components/Assistant";
+import Md from "../components/Md";
 
 export default function JobDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { setJob: setAiJob } = useAiContext();
   const [job, setJob] = useState<Job | null>(null);
   const [updates, setUpdates] = useState<JobUpdate[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
 
   async function load() {
     try {
       const data = await api.getJob(id as string);
       setJob(data);
+      setAiJob({ id: data.id, title: data.title, myRole: data.myRole });
       await loadUpdates(id as string);
     } catch (err) {
       setToast((err as Error).message);
@@ -37,6 +39,11 @@ export default function JobDetail() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    return () => setAiJob(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadUpdates(jobId: string) {
     try {
@@ -87,11 +94,6 @@ export default function JobDetail() {
                 <MessageCircle strokeWidth={1.5} className="w-4 h-4 text-ink" />
                 <span>Group chat</span>
               </Link>
-            )}
-            {!isOwner && !isMentor && (
-              <button onClick={() => setAiOpen(true)} className="btn-secondary text-sm">
-                AI help
-              </button>
             )}
             <button onClick={() => navigate(-1)} className="btn-ghost text-sm">
               Back
@@ -193,6 +195,24 @@ export default function JobDetail() {
               </div>
             </div>
           )}
+
+          {(job.attachments?.length ?? 0) > 0 && (
+            <div className="mt-5 pt-4 border-t border-line">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">Reference files</p>
+              <div className="flex flex-wrap gap-1.5">
+                {job.attachments!.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    className="badge-skill hover:opacity-90"
+                    onClick={() => api.downloadFile(a.key)}
+                  >
+                    📎 {a.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {team.length > 0 && (
@@ -234,52 +254,106 @@ export default function JobDetail() {
         )}
 
         {(job.aiRepos ?? []).length > 0 && isParticipant && (
-          <div className="card">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-              <h3 className="font-semibold text-lg">AI code reviews</h3>
-              {job.aiGateThreshold != null && (
-                <span className="badge bg-brand-50 text-brand-700">
-                  Gate: final milestone needs ≥ {job.aiGateThreshold}/5
-                </span>
-              )}
-            </div>
-            <div className="space-y-2">
-              {job.aiRepos!.map((r) => (
-                <div key={r.id} className="rounded-lg bg-gray-50 p-3 flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="font-medium text-sm">
-                      {r.owner}/{r.repo} <span className="text-gray-500 font-normal">({r.branch})</span>
-                    </p>
-                    {r.lastRun && r.lastRun.status === "done" && r.lastRun.rating != null ? (
-                      <div className="flex items-center gap-2 mt-1">
-                        <Stars value={r.lastRun.rating} />
-                        <span className="text-xs text-gray-400">{r.lastRun.commitSha.slice(0, 7)}</span>
-                        {r.lastRun.commentUrl && (
-                          <a href={r.lastRun.commentUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline">
-                            View comment
-                          </a>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-gray-500 mt-1">No reviews yet.</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <AiReviewsSection job={job} onChanged={load} onError={setToast} />
         )}
 
         {job.status === "completed" && (
           <ReviewsSection job={job} team={team} me={user} onChanged={load} onError={setToast} />
         )}
-
-        {aiOpen && (
-          <Modal title="Ask AI about this job" onClose={() => setAiOpen(false)} wide>
-            <Assistant bare defaultMode="student" jobId={job.id} jobTitle={job.title} />
-          </Modal>
-        )}
       </main>
+    </div>
+  );
+}
+
+function AiReviewsSection({ job, onChanged, onError }: { job: Job; onChanged: () => Promise<void>; onError: (m: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [count, setCount] = useState("3");
+
+  async function runReview(scope: "latest" | "commits" | "repo", n?: number) {
+    if (!job.aiRepos?.length) return;
+    setBusy(true);
+    try {
+      const run = await api.aiGithubReview(job.aiRepos[0].id, scope, n);
+      if (run.status === "done") {
+        onError(`Review done — rating ${run.rating}/5.`);
+      } else {
+        onError("Review finished with warnings.");
+      }
+      await onChanged();
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+        <h3 className="heading-card">AI code reviews</h3>
+        {job.aiGateThreshold != null && (
+          <span className="badge-lavender">Gate: final milestone needs ≥ {job.aiGateThreshold}/5</span>
+        )}
+      </div>
+
+      <div className="space-y-5">
+        {job.aiRepos!.map((r) => (
+          <div key={r.id} className="rounded-[8px] border border-line bg-bg/50 p-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="font-medium text-ink">
+                {r.owner}/{r.repo} <span className="text-muted font-normal text-sm">({r.branch})</span>
+              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => runReview("latest")}>
+                  Review latest
+                </button>
+                <select className="input text-xs max-w-[90px] py-1.5" value={count} onChange={(e) => setCount(e.target.value)}>
+                  {["1", "2", "3", "5", "10"].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => runReview("commits", Number(count))}>
+                  Review {count} commits
+                </button>
+                <button className="btn-secondary text-xs py-1.5" disabled={busy} onClick={() => runReview("repo")}>
+                  Review whole repo
+                </button>
+              </div>
+            </div>
+
+            {r.lastRun && r.lastRun.status === "done" && r.lastRun.rating != null && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <Stars value={r.lastRun.rating} />
+                <span className="text-xs text-muted font-mono">{r.lastRun.commitSha.slice(0, 7)}</span>
+                {r.lastRun.commentUrl && (
+                  <a href={r.lastRun.commentUrl} target="_blank" rel="noreferrer" className="text-xs text-accent hover:text-ink hover:underline">
+                    View comment
+                  </a>
+                )}
+              </div>
+            )}
+
+            {r.runs.length > 0 && (
+              <div className="mt-3 space-y-2 border-t border-line pt-3">
+                {r.runs.map((run) => (
+                  <div key={run.id} className="rounded-[6px] bg-surface border border-line p-3">
+                    <div className="flex items-center gap-2 flex-wrap text-xs text-muted">
+                      <span className="badge-lavender">{run.kind === "pr" ? `PR #${run.prNumber}` : run.kind === "repo" ? "whole repo" : "commit"}</span>
+                      <span className="font-mono">{run.commitSha.slice(0, 7)}</span>
+                      <span className="badge-draft">{run.status}</span>
+                      {run.rating != null && <Stars value={run.rating} />}
+                      {run.commentUrl && (
+                        <a href={run.commentUrl} target="_blank" rel="noreferrer" className="text-accent hover:text-ink hover:underline ml-auto">
+                          View on GitHub
+                        </a>
+                      )}
+                    </div>
+                    {run.summary && <Md text={run.summary} className="mt-1.5 text-muted" />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -564,11 +638,36 @@ function QuotesSection({ job, team, onChanged, onError }: {
   );
 }
 
+function isParticipantRole(role: Job["myRole"]): boolean {
+  return role === "owner" || role === "team" || role === "mentor" || role === "admin";
+}
+
 function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn: () => Promise<unknown>, success?: string) => Promise<void> }) {
   const role = job.myRole;
   const [modal, setModal] = useState<"deliver" | "revision" | "dispute" | "milestones" | "edit" | null>(null);
   const [content, setContent] = useState("");
   const [milestoneTitles, setMilestoneTitles] = useState("");
+  const [deliverFiles, setDeliverFiles] = useState<{ key: string; name: string }[]>([]);
+  const [deliverUploading, setDeliverUploading] = useState(false);
+
+  async function handleDeliverFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setDeliverUploading(true);
+    try {
+      const uploaded: { key: string; name: string }[] = [];
+      for (const file of files) {
+        uploaded.push(await api.uploadFile(file));
+      }
+      setDeliverFiles((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      // toast handled by caller; fall back to local message
+      window.alert((err as Error).message);
+    } finally {
+      setDeliverUploading(false);
+      e.target.value = "";
+    }
+  }
 
   if (!role) return null;
 
@@ -604,6 +703,17 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
               Request revision
             </button>
           </>
+        )}
+        {isParticipantRole(role) && job.status === "completed" && (
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy}
+            onClick={() => onAct(() => api.restartJob(job.id), "Job restarted — work has resumed.")}
+          >
+            <RefreshCw strokeWidth={1.5} className="w-4 h-4 text-white" />
+            Restart job
+          </button>
         )}
         {["owner", "team"].includes(role) && job.status === "delivered" && (
           <button type="button" className="btn-ghost" disabled={busy} onClick={() => setModal("dispute")}>
@@ -651,19 +761,45 @@ function ActionsBar({ job, busy, onAct }: { job: Job; busy: boolean; onAct: (fn:
             <div className="space-y-4">
               <label className="label">{modal === "deliver" ? "Delivery notes" : "Describe the issue"}</label>
               <textarea className="input" rows={4} value={content} onChange={(e) => setContent(e.target.value)} />
+              {modal === "deliver" && (
+                <div>
+                  <label className="label">Files (optional — final handover)</label>
+                  <label className="btn-secondary cursor-pointer">
+                    {deliverUploading ? "Uploading..." : "Upload files"}
+                    <input type="file" className="hidden" multiple onChange={handleDeliverFiles} />
+                  </label>
+                  {deliverFiles.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {deliverFiles.map((u) => (
+                        <span key={u.key} className="badge-skill">
+                          {u.name}
+                          <button
+                            type="button"
+                            className="ml-1 text-muted hover:text-ink"
+                            onClick={() => setDeliverFiles((prev) => prev.filter((x) => x.key !== u.key))}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 type="button"
                 className="btn-primary"
                 disabled={busy || content.trim().length < 5}
                 onClick={() => {
                   const fn = modal === "deliver"
-                    ? () => api.deliverJob(job.id, content.trim())
+                    ? () => api.deliverJob(job.id, content.trim(), deliverFiles.map((f) => f.key))
                     : modal === "revision"
                       ? () => api.revisionJob(job.id, content.trim())
                       : () => api.disputeJob(job.id, content.trim());
                   onAct(fn, modal === "deliver" ? "Work delivered! Waiting for the owner to accept." : "Submitted.");
                   setModal(null);
                   setContent("");
+                  setDeliverFiles([]);
                 }}
               >
                 Submit
@@ -901,6 +1037,20 @@ function UpdatesSection({ jobId, updates, onPosted, onError }: { jobId: string; 
             </div>
             {u.milestoneTitle && <p className="text-xs text-accent mt-1 font-medium">↳ {u.milestoneTitle}</p>}
             <p className="text-sm text-ink mt-1.5 leading-relaxed">{u.content}</p>
+            {(u.attachments?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {u.attachments!.map((a) => (
+                  <button
+                    key={a.key}
+                    type="button"
+                    className="badge-skill hover:opacity-90"
+                    onClick={() => api.downloadFile(a.key)}
+                  >
+                    📎 {a.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

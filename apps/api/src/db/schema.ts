@@ -39,7 +39,7 @@ export const businessProfiles = sqliteTable("business_profiles", {
   sector: text("sector"),
   city: text("city"),
   verificationStatus: text("verification_status", {
-    enum: ["unverified", "pending", "verified"],
+    enum: ["unverified", "pending", "verified", "rejected"],
   })
     .default("unverified")
     .notNull(),
@@ -69,6 +69,7 @@ export const jobs = sqliteTable("jobs", {
   budgetMax: real("budget_max"),
   deadline: text("deadline"),
   acceptanceCriteria: text("acceptance_criteria"),
+  attachments: text("attachments"), // JSON: [{key, name}] reference files
   status: text("status", {
     enum: [
       "draft",
@@ -145,6 +146,7 @@ export const jobUpdates = sqliteTable("job_updates", {
     .notNull(),
   milestoneId: text("milestone_id").references(() => milestones.id),
   content: text("content").notNull(),
+  attachments: text("attachments"), // JSON: [{key, name}] for deliveries
   createdAt: text("created_at").default(sql`(datetime('now'))`),
 });
 
@@ -180,6 +182,17 @@ export const auditLog = sqliteTable("audit_log", {
   timestamp: text("timestamp").default(sql`(datetime('now'))`),
 });
 
+// Outgoing email log (Gmail SMTP workflow)
+export const emailLog = sqliteTable("email_log", {
+  id: text("id").primaryKey(),
+  toEmail: text("to_email").notNull(),
+  subject: text("subject").notNull(),
+  bodyPreview: text("body_preview"),
+  status: text("status", { enum: ["sent", "mocked", "skipped", "failed"] }).notNull(),
+  error: text("error"),
+  createdAt: text("created_at").default(sql`(datetime('now'))`),
+});
+
 // AI GitHub code-review agent
 export const aiRepos = sqliteTable("ai_repos", {
   id: text("id").primaryKey(),
@@ -203,7 +216,7 @@ export const reviewRuns = sqliteTable("review_runs", {
   commitSha: text("commit_sha").notNull(),
   commitMessage: text("commit_message"),
   status: text("status", { enum: ["running", "done", "failed"] }).notNull(),
-  kind: text("kind", { enum: ["commit", "pr"] }).default("commit").notNull(),
+  kind: text("kind", { enum: ["commit", "pr", "repo"] }).default("commit").notNull(),
   prNumber: integer("pr_number"),
   summary: text("summary"),
   rating: real("rating"),

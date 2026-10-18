@@ -14,6 +14,7 @@ import { mentorRoutes } from "./routes/mentor";
 import { adminRoutes } from "./routes/admin";
 import { chatRoutes } from "./routes/chat";
 import { aiRoutes } from "./routes/ai";
+import { fileRoutes } from "./routes/files";
 
 const app = new Hono<AppEnv>();
 
@@ -44,6 +45,7 @@ app.route("/api/mentor", mentorRoutes());
 app.route("/api/admin", adminRoutes());
 app.route("/api/chat", chatRoutes());
 app.route("/api/ai", aiRoutes());
+app.route("/api/files", fileRoutes());
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 

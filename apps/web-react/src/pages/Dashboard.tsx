@@ -4,10 +4,9 @@ import { Upload } from "lucide-react";
 import { api, budgetLabel, type Job, type MyApplication, type ChatRoomSummary, type JobReview, type PublicUser } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { Stars, StatusBadge, VerifiedBadge } from "../components/ui";
-import Assistant from "../components/Assistant";
 import CodeReviews from "../components/CodeReviews";
 
-type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "ai" | "repos";
+type Tab = "find" | "myjobs" | "mywork" | "messages" | "profile" | "repos";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -56,7 +55,6 @@ export default function Dashboard() {
     { id: "myjobs", label: "My Jobs" },
     { id: "mywork", label: "My Work" },
     { id: "messages", label: `Messages${rooms.some((r) => r.unread > 0) ? ` (${rooms.reduce((s, r) => s + r.unread, 0)})` : ""}` },
-    { id: "ai", label: "AI Help" },
     { id: "repos", label: "Code Reviews" },
     { id: "profile", label: "Profile" },
   ];
@@ -117,7 +115,6 @@ export default function Dashboard() {
         {tab === "myjobs" && <MyJobs jobs={myJobs} onChanged={loadAll} onError={setToast} />}
         {tab === "mywork" && <MyWork items={myWork} />}
         {tab === "messages" && <Messages rooms={rooms} onOpened={() => setTimeout(loadAll, 500)} />}
-        {tab === "ai" && <Assistant />}
         {tab === "repos" && <CodeReviews />}
         {tab === "profile" && <ProfileTab onChanged={refresh} onError={setToast} />}
       </main>
@@ -287,6 +284,8 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
   const [aiLoading, setAiLoading] = useState(false);
   const [aiBrief, setAiBrief] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [uploads, setUploads] = useState<{ key: string; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -299,6 +298,24 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
     acceptanceCriteria: "",
     milestones: "",
   });
+
+  async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const uploaded: { key: string; name: string }[] = [];
+      for (const file of files) {
+        uploaded.push(await api.uploadFile(file));
+      }
+      setUploads((prev) => [...prev, ...uploaded]);
+    } catch (err) {
+      onError((err as Error).message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
 
   async function generateBrief() {
     setAiLoading(true);
@@ -320,7 +337,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
     }
   }
 
-  async function create() {
+  async function create(publish: boolean) {
     setBusy(true);
     try {
       const positions = form.positions
@@ -330,7 +347,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           return m ? { title: m[1].trim(), count: Number(m[2]) } : { title: line.trim(), count: 1 };
         })
         .filter((p) => p.title);
-      await api.createJob({
+      const job = await api.createJob({
         title: form.title,
         description: form.description,
         category: form.category,
@@ -340,6 +357,7 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
         budgetMax: form.budgetMax ? Number(form.budgetMax) : undefined,
         deadline: form.deadline || undefined,
         acceptanceCriteria: form.acceptanceCriteria || undefined,
+        attachments: uploads.length ? uploads : undefined,
         milestones: form.milestones
           .split("\n")
           .map((line) => {
@@ -348,6 +366,10 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
           })
           .filter((m) => m.title),
       });
+      if (publish && job?.id) {
+        await api.publishJob(job.id);
+        onError("Job published — it's now open for quotes.");
+      }
       onDone();
     } catch (err) {
       onError((err as Error).message);
@@ -446,11 +468,37 @@ function PostJobForm({ onDone, onError }: { onDone: () => void; onError: (m: str
               onChange={(e) => setForm({ ...form, milestones: e.target.value })}
             />
           </div>
+          <div className="mt-4">
+            <label className="label">Reference files (optional)</label>
+            <label className="btn-secondary cursor-pointer">
+              {uploading ? "Uploading..." : "Upload files"}
+              <input type="file" className="hidden" multiple onChange={handleFiles} />
+            </label>
+            {uploads.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {uploads.map((u) => (
+                  <span key={u.key} className="badge-skill">
+                    {u.name}
+                    <button
+                      type="button"
+                      className="ml-1 text-muted hover:text-ink"
+                      onClick={() => setUploads((prev) => prev.filter((x) => x.key !== u.key))}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
 
         <div className="flex gap-3 pt-2">
-          <button type="button" onClick={create} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
+          <button type="button" onClick={() => create(false)} className="btn-secondary" disabled={busy || !form.title || !form.description || !form.category}>
             {busy ? "Saving..." : "Save as draft"}
+          </button>
+          <button type="button" onClick={() => create(true)} className="btn-primary" disabled={busy || !form.title || !form.description || !form.category}>
+            {busy ? "Publishing..." : "Save & publish"}
           </button>
           <button type="button" onClick={onDone} className="btn-ghost">
             Cancel

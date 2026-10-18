@@ -312,6 +312,7 @@ function MentorsTab({ mentors, busy, run }: { mentors: AdminMentorRow[]; busy: b
 
 function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow[]; busy: boolean; run: (fn: () => Promise<unknown>, msg: string) => Promise<void> }) {
   const [creating, setCreating] = useState(false);
+  const [reviewing, setReviewing] = useState<AdminBusinessRow | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "", businessName: "", sector: "", city: "" });
   const [formError, setFormError] = useState("");
 
@@ -391,11 +392,9 @@ function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow
               ) : (
                 <span className="badge-draft">{b.verificationStatus}</span>
               )}
-              {b.verificationStatus !== "verified" && (
-                <button className="btn-primary text-xs py-1.5" disabled={busy} onClick={() => run(() => api.adminVerifyBusiness(b.userId), "Business verified.")}>
-                  Verify
-                </button>
-              )}
+              <button className="btn-secondary text-xs py-1.5" onClick={() => setReviewing(b)}>
+                Review
+              </button>
               <button
                 className="btn-ghost text-xs py-1.5 text-accent hover:text-ink"
                 disabled={busy}
@@ -411,6 +410,54 @@ function BusinessesTab({ businesses, busy, run }: { businesses: AdminBusinessRow
           </div>
         ))}
       </div>
+
+      {reviewing && (
+        <Modal title="Business verification" onClose={() => setReviewing(null)} wide>
+          <div className="space-y-4">
+            <div className="rounded-[8px] border border-line bg-bg/50 p-4 grid sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              <InfoRow label="Contact name" value={reviewing.name} />
+              <InfoRow label="Email" value={reviewing.email} />
+              <InfoRow label="Business name" value={reviewing.businessName} />
+              <InfoRow label="Sector" value={reviewing.sector} />
+              <InfoRow label="City" value={reviewing.city} />
+              <InfoRow label="Udyam number" value={reviewing.udyamNumber} />
+              <InfoRow label="Verification status" value={reviewing.verificationStatus} />
+              <InfoRow label="Account status" value={reviewing.status} />
+            </div>
+            <div className="flex gap-2">
+              <button
+                className="btn-primary flex-1"
+                disabled={busy}
+                onClick={() => {
+                  run(() => api.adminVerifyBusiness(reviewing.userId), "Business approved.");
+                  setReviewing(null);
+                }}
+              >
+                ✓ Approve
+              </button>
+              <button
+                className="btn-ghost flex-1 border border-line text-red-600 hover:bg-red-50"
+                disabled={busy}
+                onClick={() => {
+                  run(() => api.adminRejectBusiness(reviewing.userId), "Business rejected.");
+                  setReviewing(null);
+                }}
+              >
+                ✕ Reject
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">{label}</p>
+      <p className="text-ink mt-0.5">{value || "—"}</p>
     </div>
   );
 }
@@ -479,20 +526,35 @@ function JobsTab({ jobs, mentors, busy, run }: {
                 {j.team.map((t) => (
                   <div key={t.userId} className="flex items-center justify-between text-xs">
                     <span className="text-ink font-medium">{t.name} <span className="text-muted font-normal">— {t.positionTitle}</span></span>
-                    <button
-                      className="text-accent hover:text-ink hover:underline text-xs"
-                      disabled={busy}
-                      onClick={() => {
-                        if (window.confirm(`Free ${t.name} from this job? The job goes back to public listings if the team is no longer complete.`)) {
-                          run(() => api.adminRemoveMember(j.id, t.userId), `${t.name} removed from the job.`);
-                        }
-                      }}
-                    >
-                      Free from job
-                    </button>
+                    {!["completed", "cancelled", "delisted"].includes(j.status) && (
+                      <button
+                        className="text-accent hover:text-ink hover:underline text-xs"
+                        disabled={busy}
+                        onClick={() => {
+                          if (window.confirm(`Free ${t.name} from this job? The job goes back to public listings if the team is no longer complete.`)) {
+                            run(() => api.adminRemoveMember(j.id, t.userId), `${t.name} removed from the job.`);
+                          }
+                        }}
+                      >
+                        Free from job
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
+              {j.status === "completed" && (
+                <button
+                  className="btn-primary text-xs py-1.5 mt-2"
+                  disabled={busy}
+                  onClick={() => {
+                    if (window.confirm("Restart this job? Work resumes and it leaves the completed state.")) {
+                      run(() => api.restartJob(j.id), "Job restarted — work has resumed.");
+                    }
+                  }}
+                >
+                  Restart job
+                </button>
+              )}
             </div>
           </div>
         </div>

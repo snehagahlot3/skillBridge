@@ -11,6 +11,7 @@ import * as gh from "./githubClient";
 import type { GhPullRequest } from "./githubClient";
 import type { Env } from "../types";
 import { AI_MODEL, aiResponseText } from "./aiModel";
+import { notifyJobParticipants } from "./email";
 
 const CHUNK_CHARS = 3500;
 const MAX_CHUNKS = 6;
@@ -192,12 +193,17 @@ export function formatReport(sha: string, message: string, report: ReviewReport)
   return lines.join("\n");
 }
 
-// Shared runner used by the "Review now" endpoint and the cron poller.
+// Shared runner used by the "Review now" endpoint, webhooks and the cron.
+export type ReviewScope = "latest" | "commits" | "repo";
+
 export async function runReviewForRepo(
   env: Env,
   db: DB,
-  repo: typeof aiRepos.$inferSelect
+  repo: typeof aiRepos.$inferSelect,
+  options?: { scope?: ReviewScope; count?: number }
 ): Promise<typeof reviewRuns.$inferSelect> {
+  const scope: ReviewScope = options?.scope ?? "latest";
+  const count = Math.min(Math.max(options?.count ?? 3, 1), 20);
   const token = await decryptToken(repo.tokenEnc, env.JWT_SECRET);
 
   const runId = crypto.randomUUID();
@@ -206,22 +212,55 @@ export async function runReviewForRepo(
     repoId: repo.id,
     commitSha: "",
     status: "running",
+    kind: scope === "repo" ? "repo" : "commit",
   });
 
   try {
-    const outcome = await reviewCommit(env, repo.owner, repo.repo, repo.branch, token, {
-      getLatestCommit: gh.getLatestCommit,
-      getCommitDiff: gh.getCommitDiff,
-    });
+    let sha = "";
+    let message = "";
+    let report: ReviewReport | null = null;
+    let tokensUsed = 0;
+
+    if (scope === "commits") {
+      const commits = await gh.getRecentCommits(env, repo.owner, repo.repo, repo.branch, count, token);
+      const reports: ReviewReport[] = [];
+      for (const c of commits) {
+        const diff = await gh.getCommitDiffForSha(env, repo.owner, repo.repo, c.sha, token);
+        if (!diff || !diff.trim()) continue;
+        const r = await reviewDiff(env, diff);
+        reports.push(r.report);
+        tokensUsed += r.tokensUsed;
+      }
+      report = aggregateReports(reports);
+      sha = commits[0]?.sha ?? "";
+      message = `Reviewed ${commits.length} recent commits`;
+    } else if (scope === "repo") {
+      const files = await gh.getRepoTree(env, repo.owner, repo.repo, repo.branch, token);
+      const text = files.map((f) => `=== ${f.path} ===\n${f.content}`).join("\n\n");
+      const r = await reviewDiff(env, text || "Empty repository");
+      report = r.report;
+      tokensUsed = r.tokensUsed;
+      sha = repo.branch;
+      message = `Whole repository review (${files.length} files)`;
+    } else {
+      const outcome = await reviewCommit(env, repo.owner, repo.repo, repo.branch, token, {
+        getLatestCommit: gh.getLatestCommit,
+        getCommitDiff: gh.getCommitDiff,
+      });
+      sha = outcome.sha;
+      message = outcome.message;
+      report = outcome.report;
+      tokensUsed = outcome.tokensUsed;
+    }
 
     let commentUrl: string | null = null;
-    if (outcome.report) {
+    if (report) {
       const comment = await gh.postCommitComment(
         env,
         repo.owner,
         repo.repo,
-        outcome.sha,
-        formatReport(outcome.sha, outcome.message, outcome.report),
+        sha,
+        formatReport(sha, message, report),
         token
       );
       commentUrl = comment.html_url;
@@ -231,45 +270,52 @@ export async function runReviewForRepo(
       .update(reviewRuns)
       .set({
         status: "done",
-        commitSha: outcome.sha,
-        commitMessage: outcome.message,
-        summary: outcome.report?.summary ?? "No changes to review.",
-        rating: outcome.report?.rating ?? null,
-        findings: JSON.stringify(outcome.report?.findings ?? []),
-        suggestedFixes: JSON.stringify(outcome.report?.suggestedFixes ?? []),
+        commitSha: sha,
+        commitMessage: message,
+        summary: report?.summary ?? "No changes to review.",
+        rating: report?.rating ?? null,
+        findings: JSON.stringify(report?.findings ?? []),
+        suggestedFixes: JSON.stringify(report?.suggestedFixes ?? []),
         commentUrl,
-        tokensUsed: outcome.tokensUsed,
+        tokensUsed,
       })
       .where(eq(reviewRuns.id, runId));
     await db
       .update(aiRepos)
-      .set({ lastReviewedSha: outcome.sha })
+      .set({ lastReviewedSha: sha || repo.lastReviewedSha })
       .where(eq(aiRepos.id, repo.id));
 
     // If the repo is linked to a job, surface the review in the job's
-    // progress timeline (visible to owner, team and mentor).
-    if (repo.jobId && outcome.report) {
+    // progress timeline (visible to owner, team and mentor) + email them.
+    if (repo.jobId && report) {
       const [job] = await db.select().from(jobs).where(eq(jobs.id, repo.jobId));
       if (job) {
-        const report = outcome.report;
         const topFindings = report.findings
           .slice(0, 3)
           .map((f) => `[${f.severity}] ${f.file}${f.line ? ":" + f.line : ""} — ${f.issue}`)
           .join(" · ");
+        const content = [
+          `🤖 AI code review: ${report.rating}/5 for ${message.toLowerCase()} (${repo.owner}/${repo.repo})`,
+          report.summary,
+          topFindings,
+          commentUrl,
+        ]
+          .filter(Boolean)
+          .join("\n");
         await db.insert(jobUpdates).values({
           id: crypto.randomUUID(),
           jobId: repo.jobId,
           authorId: repo.userId,
           kind: "update",
-          content: [
-            `🤖 AI code review: ${report.rating}/5 for commit \`${outcome.sha.slice(0, 7)}\` (${repo.owner}/${repo.repo})`,
-            report.summary,
-            topFindings,
-            commentUrl,
-          ]
-            .filter(Boolean)
-            .join("\n"),
+          content,
         });
+        await notifyJobParticipants(
+          env,
+          db,
+          repo.jobId,
+          `SkillBridge AI review: ${job.title} — ${report.rating}/5`,
+          `${message} for ${repo.owner}/${repo.repo}\n\n${report.summary}\n\n${commentUrl ?? ""}`
+        );
       }
     }
 
@@ -281,6 +327,16 @@ export async function runReviewForRepo(
     const [run] = await db.select().from(reviewRuns).where(eq(reviewRuns.id, runId));
     return run;
   }
+}
+
+function aggregateReports(reports: ReviewReport[]): ReviewReport {
+  if (!reports.length) {
+    return { summary: "The AI reviewer could not produce a report for these commits.", rating: 3, findings: [], suggestedFixes: [] };
+  }
+  const findings = reports.flatMap((r) => r.findings);
+  const fixes = reports.flatMap((r) => r.suggestedFixes);
+  const rating = Math.round(reports.reduce((s, r) => s + r.rating, 0) / reports.length);
+  return { summary: reports.map((r) => r.summary).join(" "), rating, findings, suggestedFixes: fixes };
 }
 
 // Cron entrypoint: review new commits on all active repos.
@@ -393,6 +449,13 @@ export async function runReviewForPr(
           kind: "update",
           content: `🤖 AI PR review: ${report.rating}/5 for PR #${pr.number} "${pr.title}" (${repo.owner}/${repo.repo})\n${report.summary}\n${comment.html_url}`,
         });
+        await notifyJobParticipants(
+          env,
+          db,
+          repo.jobId,
+          `SkillBridge AI PR review: ${job.title} — ${report.rating}/5`,
+          `PR #${pr.number} "${pr.title}" (${repo.owner}/${repo.repo})\n\n${report.summary}\n\n${comment.html_url}`
+        );
       }
     }
 

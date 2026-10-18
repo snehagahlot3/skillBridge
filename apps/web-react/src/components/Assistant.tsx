@@ -1,24 +1,53 @@
 import { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 import { api } from "../lib/api";
+import { useAuth } from "../context/AuthContext";
+import { useAiContext } from "../context/AiContext";
+import Md from "./Md";
+
+type Mode = "owner" | "student" | "mentor";
 
 interface Msg {
   role: "user" | "assistant";
   content: string;
 }
 
+const MODE_LABELS: Record<Mode, string> = {
+  mentor: "Mentor mode",
+  owner: "Posting mode",
+  student: "Applying mode",
+};
+
+const MODE_HINTS: Record<Mode, string> = {
+  mentor:
+    "I'm your mentor assistant — ask me how to guide the hired team, review milestone work, or give feedback.",
+  owner:
+    "Describe your business problem — I'll help you scope the job, skills, budget and milestones.",
+  student:
+    "I can help you understand this job and craft a strong quote. Ask me anything about it.",
+};
+
 export default function Assistant({
-  defaultMode,
   jobId,
   jobTitle,
   bare,
 }: {
-  defaultMode?: "owner" | "student";
   jobId?: string;
   jobTitle?: string;
   bare?: boolean;
 }) {
-  const [mode, setMode] = useState<"owner" | "student">(defaultMode ?? "owner");
+  const { user, me } = useAuth();
+  const { job } = useAiContext();
+
+  // Auto-detect mode: mentor role -> mentor; job page with owner role ->
+  // posting; otherwise applying. Without context, owners with a business
+  // profile default to posting mode.
+  let detected: Mode = "student";
+  if (user?.role === "mentor") detected = "mentor";
+  else if (job) detected = job.myRole === "owner" ? "owner" : "student";
+  else if (me?.business) detected = "owner";
+
+  const mode: Mode = detected;
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -38,7 +67,7 @@ export default function Assistant({
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     setBusy(true);
     try {
-      const res = await api.aiChat(mode, text, history, jobId);
+      const res = await api.aiChat(mode, text, history, jobId ?? job?.id);
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
     } catch (err) {
       setError((err as Error).message);
@@ -47,100 +76,58 @@ export default function Assistant({
     }
   }
 
-  const samplePrompt =
-    mode === "owner"
-      ? "I want more Diwali-season customers for my electronics shop — what should I ask a freelancer to do?"
-      : "What is this job really asking for, and what should my quote cover?";
-
   return (
     <div className={bare ? "flex flex-col" : "card flex flex-col min-h-[520px]"}>
       <div className="flex items-center justify-between flex-wrap gap-3 border-b border-line pb-4 mb-3">
         <h3 className="heading-card">AI Assistant</h3>
-        <div className="inline-flex rounded-[8px] border border-line bg-bg p-1 gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setMode("owner");
-              setMessages([]);
-            }}
-            className={`px-3 py-1.5 text-xs rounded-[6px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              mode === "owner"
-                ? "bg-ink text-white font-semibold shadow-sm"
-                : "text-muted hover:text-ink font-medium"
-            }`}
-          >
-            I'm posting a job
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode("student");
-              setMessages([]);
-            }}
-            className={`px-3 py-1.5 text-xs rounded-[6px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
-              mode === "student"
-                ? "bg-ink text-white font-semibold shadow-sm"
-                : "text-muted hover:text-ink font-medium"
-            }`}
-          >
-            I'm applying
-          </button>
-        </div>
+        <span className="badge-lavender">{MODE_LABELS[mode]}</span>
       </div>
 
-      <p className="text-xs text-muted mb-4 leading-relaxed">
-        {mode === "owner"
-          ? "Describe your business problem — I'll help you scope the job, skills, budget and milestones."
-          : jobTitle
-            ? `I can help you understand this job: “${jobTitle}”. Ask me anything about it.`
-            : "Paste a job description or ask about a job — I'll help you understand what the owner needs."}
+      <p className="text-xs text-muted mb-3 leading-relaxed">
+        {jobTitle || job?.title
+          ? `About “${jobTitle || job?.title}”: ${MODE_HINTS[mode]}`
+          : MODE_HINTS[mode]}
       </p>
 
-      {error && (
-        <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">
-          {error}
-        </div>
-      )}
+      {error && <div className="mb-3 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{error}</div>}
 
-      {/* Chat Messages Panel with defined min-height */}
-      <div className="space-y-3 min-h-[300px] max-h-[460px] overflow-y-auto pr-1 mb-4 flex-1 flex flex-col justify-between">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 my-auto text-center">
-            <p className="text-xs text-muted mb-3 font-medium">Try asking:</p>
-            <button
-              type="button"
-              onClick={() => setInput(samplePrompt)}
-              className="text-left text-xs bg-lavender text-ink px-4 py-2.5 rounded-[8px] border border-line hover:opacity-90 transition-opacity max-w-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent cursor-pointer"
-            >
-              “{samplePrompt}”
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`rounded-[12px] px-4 py-2.5 text-sm max-w-[85%] whitespace-pre-wrap leading-relaxed ${
-                    m.role === "user"
-                      ? "bg-ink text-white font-normal"
-                      : "bg-surface border border-line text-ink"
-                  }`}
-                >
-                  {m.content}
-                </div>
-              </div>
-            ))}
-          </div>
+      <div className="space-y-3 max-h-80 overflow-y-auto pr-1 mb-3">
+        {messages.length === 0 && (
+          <p className="text-sm text-muted text-center py-4">
+            {mode === "mentor"
+              ? "Try: “How should I review this milestone work?”"
+              : mode === "owner"
+                ? "Try: “I want more Diwali-season customers for my electronics shop — what should I ask a freelancer to do?”"
+                : "Try: “What is this job really asking for, and what should my quote cover?”"}
+          </p>
         )}
-        {busy && <p className="text-xs text-muted italic">Thinking…</p>}
+        {messages.map((m, i) => (
+          <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            {m.role === "user" ? (
+              <div className="rounded-[10px] px-4 py-2.5 text-sm max-w-[85%] bg-accent text-white whitespace-pre-wrap leading-relaxed">
+                {m.content}
+              </div>
+            ) : (
+              <div className="rounded-[10px] px-4 py-2.5 max-w-[85%] bg-bg border border-line">
+                <Md text={m.content} />
+              </div>
+            )}
+          </div>
+        ))}
+        {busy && <p className="text-xs text-muted">Thinking…</p>}
         <div ref={bottomRef} />
       </div>
 
-      {/* Input Row */}
-      <div className="flex gap-2 pt-2 border-t border-line">
+      <div className="flex gap-2">
         <input
           className="input"
-          placeholder={mode === "owner" ? "Describe your idea or problem..." : "Ask about the job..."}
+          placeholder={
+            mode === "mentor"
+              ? "Ask about guiding this job..."
+              : mode === "owner"
+                ? "Describe your idea or problem..."
+                : "Ask about the job..."
+          }
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -150,13 +137,7 @@ export default function Assistant({
             }
           }}
         />
-        <button
-          type="button"
-          className="btn-primary shrink-0 px-4"
-          onClick={send}
-          disabled={busy || !input.trim()}
-          aria-label="Send message"
-        >
+        <button className="btn-primary shrink-0" onClick={send} disabled={busy || !input.trim()}>
           <Send strokeWidth={1.5} className="w-4 h-4 text-white" />
         </button>
       </div>

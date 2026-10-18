@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { GitBranch, RefreshCw, Trash2 } from "lucide-react";
 import { api, type AiRepo, type Job, type ReviewRun } from "../lib/api";
 import { Stars } from "./ui";
+import Md from "./Md";
 
 export default function CodeReviews() {
   const [repos, setRepos] = useState<AiRepo[]>([]);
@@ -45,7 +46,7 @@ export default function CodeReviews() {
       });
       setShowForm(false);
       setForm({ owner: "", repo: "", token: "", branch: "main", jobId: "" });
-      setToast("Repo connected. Press 'Review now' to run the first review.");
+      setToast("Repo connected. Press 'Review latest' to run the first review.");
       await load();
     } catch (err) {
       setFormError((err as Error).message);
@@ -54,12 +55,12 @@ export default function CodeReviews() {
     }
   }
 
-  async function reviewNow(repoId: string) {
+  async function reviewNow(repoId: string, scope: "latest" | "commits" | "repo" = "latest", count?: number) {
     setBusy(true);
     try {
-      const run = await api.aiGithubReview(repoId);
+      const run = await api.aiGithubReview(repoId, scope, count);
       if (run.status === "done") {
-        setToast(`Review done — rating ${run.rating}/5. Posted to GitHub.`);
+        setToast(`Review done — rating ${run.rating}/5. Summary stored and posted.`);
       } else {
         setToast("Review finished with warnings.");
       }
@@ -94,26 +95,31 @@ export default function CodeReviews() {
     }
   }
 
-  if (loading) return <div className="p-8">Loading...</div>;
+  if (loading) return <div className="p-8 text-center text-muted">Loading...</div>;
 
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-2">
         <div>
-          <h2 className="text-2xl font-bold">AI Code Reviews</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Connect a GitHub repo — every new commit is reviewed by the AI agent and the report is posted as a commit comment.
+          <h2 className="heading-title text-xl">AI Code Reviews</h2>
+          <p className="text-sm text-muted mt-1 leading-relaxed">
+            Connect a GitHub repo — review the latest commit, recent commits or the whole repository.
+            New commits are reviewed automatically every 15 minutes.
           </p>
         </div>
         <button className="btn-primary" onClick={() => setShowForm(true)}>Connect a repo</button>
       </div>
 
-      {toast && <div className="mb-4 rounded-lg bg-yellow-50 p-3 text-sm text-yellow-800">{toast}</div>}
+      {toast && (
+        <div className="mb-6 rounded-[8px] border border-line bg-surface p-4 text-sm text-ink border-l-4 border-l-accent">
+          {toast}
+        </div>
+      )}
 
       {showForm && (
-        <div className="card mb-6">
-          <h3 className="font-semibold text-lg mb-4">Connect GitHub repository</h3>
-          {formError && <div className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{formError}</div>}
+        <div className="card p-6 mb-6">
+          <h3 className="heading-card mb-4">Connect GitHub repository</h3>
+          {formError && <div className="mb-4 rounded-[8px] border border-line bg-surface p-3 text-sm text-ink border-l-4 border-l-accent">{formError}</div>}
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -128,14 +134,14 @@ export default function CodeReviews() {
             <div>
               <label className="label">GitHub personal access token (repo scope)</label>
               <input type="password" className="input" placeholder="ghp_..." value={form.token} onChange={(e) => setForm({ ...form, token: e.target.value })} />
-              <p className="text-xs text-gray-400 mt-1">Stored encrypted. Used only to read diffs and post review comments.</p>
+              <p className="text-xs text-muted mt-1">Stored encrypted. Used only to read diffs and post review comments.</p>
             </div>
             <div>
               <label className="label">Branch to watch</label>
               <input className="input" placeholder="main" value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} />
             </div>
             <div>
-              <label className="label">Link to a job (optional — reviews appear in its progress timeline)</label>
+              <label className="label">Link to a job (optional — reviews appear in its progress timeline and get emailed)</label>
               <select className="input" value={form.jobId} onChange={(e) => setForm({ ...form, jobId: e.target.value })}>
                 <option value="">No job link</option>
                 {myJobs.map((j) => (
@@ -155,31 +161,37 @@ export default function CodeReviews() {
 
       <div className="grid gap-4">
         {repos.map((repo) => (
-          <div key={repo.id} className="card">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <p className="font-semibold inline-flex items-center gap-2">
-                  <GitBranch className="w-4 h-4 text-gray-400" />
+          <div key={repo.id} className="card p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-ink inline-flex items-center gap-2 flex-wrap">
+                  <GitBranch strokeWidth={1.5} className="w-4 h-4 text-muted" />
                   {repo.owner}/{repo.repo}
-                  <span className="text-sm text-gray-500 font-normal">({repo.branch})</span>
-                  {repo.jobTitle && <span className="badge bg-brand-50 text-brand-700">↳ {repo.jobTitle}</span>}
+                  <span className="text-muted text-sm font-normal">({repo.branch})</span>
+                  {repo.jobTitle && <span className="badge-lavender">↳ {repo.jobTitle}</span>}
                 </p>
                 {repo.lastRun ? (
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
-                    <span className={`badge ${repo.lastRun.status === "done" ? "badge-verified" : "badge-pending"}`}>{repo.lastRun.status}</span>
+                    <span className={repo.lastRun.status === "done" ? "badge-verified" : "badge-draft"}>{repo.lastRun.status}</span>
                     {repo.lastRun.rating != null && <Stars value={repo.lastRun.rating} />}
-                    {repo.lastRun.commitSha && <span className="text-xs text-gray-400">{repo.lastRun.commitSha.slice(0, 7)}</span>}
+                    {repo.lastRun.commitSha && <span className="text-xs text-muted font-mono">{repo.lastRun.commitSha.slice(0, 7)}</span>}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500 mt-1">No reviews yet.</p>
+                  <p className="text-sm text-muted mt-1">No reviews yet.</p>
                 )}
               </div>
-              <div className="flex gap-2">
-                <button className="btn-primary text-sm" disabled={busy} onClick={() => reviewNow(repo.id)}>
-                  <RefreshCw className="w-4 h-4 mr-1" /> Review now
+              <div className="flex gap-2 shrink-0 flex-wrap">
+                <button className="btn-primary text-sm" disabled={busy} onClick={() => reviewNow(repo.id, "latest")}>
+                  <RefreshCw strokeWidth={1.5} className="w-4 h-4 text-white" /> Review latest
+                </button>
+                <button className="btn-secondary text-sm" disabled={busy} onClick={() => reviewNow(repo.id, "commits", 3)}>
+                  Review 3 commits
+                </button>
+                <button className="btn-secondary text-sm" disabled={busy} onClick={() => reviewNow(repo.id, "repo")}>
+                  Whole repo
                 </button>
                 <button
-                  className="btn-secondary text-sm"
+                  className="btn-ghost text-sm"
                   onClick={() => {
                     if (openRepo === repo.id) setOpenRepo(null);
                     else { setOpenRepo(repo.id); loadRuns(repo.id); }
@@ -187,49 +199,41 @@ export default function CodeReviews() {
                 >
                   History
                 </button>
-                <button className="btn-ghost text-sm text-red-600" disabled={busy} onClick={() => remove(repo.id)}>
-                  <Trash2 className="w-4 h-4" />
+                <button className="btn-ghost text-sm text-accent hover:text-ink" disabled={busy} onClick={() => remove(repo.id)}>
+                  <Trash2 strokeWidth={1.5} className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {openRepo === repo.id && (
-              <div className="mt-4 border-t pt-4 space-y-3">
-                <p className="text-sm font-medium text-gray-700">Review history</p>
-                {runs.length === 0 && <p className="text-sm text-gray-500">No runs yet.</p>}
+              <div className="mt-4 pt-4 border-t border-line space-y-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-accent">Review history</p>
+                {runs.length === 0 && <p className="text-sm text-muted">No runs yet.</p>}
                 {runs.map((run) => (
-                  <div key={run.id} className="rounded-lg bg-gray-50 p-3">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-mono">{run.commitSha.slice(0, 7) || "—"}</span>
-                      <span className="text-xs text-gray-500">{run.commitMessage}</span>
-                      <span className={`badge ${run.status === "done" ? "badge-verified" : "badge-pending"}`}>{run.status}</span>
+                  <div key={run.id} className="rounded-[8px] border border-line bg-bg/50 p-3.5">
+                    <div className="flex items-center gap-2 flex-wrap text-xs text-muted">
+                      <span className="font-mono">{run.commitSha.slice(0, 7) || "—"}</span>
+                      <span>{run.commitMessage}</span>
+                      <span className="badge-draft">{run.status}</span>
                       {run.rating != null && <Stars value={run.rating} />}
                       {run.commentUrl && (
-                        <a href={run.commentUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 hover:underline ml-auto">
+                        <a href={run.commentUrl} target="_blank" rel="noreferrer" className="text-accent hover:text-ink hover:underline ml-auto">
                           View on GitHub
                         </a>
                       )}
                     </div>
-                    {run.summary && <p className="text-sm text-gray-600 mt-2">{run.summary}</p>}
+                    {run.summary && <Md text={run.summary} className="mt-2 text-muted" />}
                     {run.findings.length > 0 && (
                       <div className="mt-2 space-y-1">
                         {run.findings.slice(0, 5).map((f, i) => (
-                          <p key={i} className="text-xs text-gray-600">
-                            <span className="font-medium text-red-600">[{f.severity}]</span>{" "}
+                          <p key={i} className="text-xs text-muted">
+                            <span className="font-medium text-accent">[{f.severity}]</span>{" "}
                             <span className="font-mono">{f.file}{f.line ? `:${f.line}` : ""}</span> — {f.issue}
                           </p>
                         ))}
                         {run.findings.length > 5 && (
-                          <p className="text-xs text-gray-400">+{run.findings.length - 5} more findings</p>
+                          <p className="text-xs text-muted">+{run.findings.length - 5} more findings</p>
                         )}
-                      </div>
-                    )}
-                    {run.suggestedFixes.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-xs font-medium text-gray-700">Suggested fixes</p>
-                        {run.suggestedFixes.slice(0, 3).map((s, i) => (
-                          <p key={i} className="text-xs text-gray-600">• {s}</p>
-                        ))}
                       </div>
                     )}
                   </div>
@@ -239,7 +243,7 @@ export default function CodeReviews() {
           </div>
         ))}
         {repos.length === 0 && (
-          <div className="card text-center text-gray-500">
+          <div className="card p-10 text-center text-muted">
             No repos connected yet. Connect one and the AI agent will review new commits automatically (every 15 minutes).
           </div>
         )}

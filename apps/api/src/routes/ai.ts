@@ -1,13 +1,13 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { eq, desc, gt, and } from "drizzle-orm";
-import { jobs, aiRepos, reviewRuns } from "../db/schema";
+import { jobs, aiRepos, reviewRuns, teamMembers } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import { encryptToken, verifyHmacHex } from "../lib/crypto";
 import { runReviewForRepo, handleWebhookEvent, type WebhookPayload } from "../lib/reviewEngine";
 import { getAuthenticatedUser } from "../lib/githubClient";
 import { AI_MODEL, aiResponseText } from "../lib/aiModel";
-import type { AppEnv } from "../types";
+import type { AppEnv, AuthUser } from "../types";
 
 const briefSchema = z.object({
   description: z.string().min(20),
@@ -15,7 +15,7 @@ const briefSchema = z.object({
 });
 
 const chatSchema = z.object({
-  mode: z.enum(["owner", "student"]),
+  mode: z.enum(["owner", "student", "mentor"]),
   jobId: z.string().optional(),
   message: z.string().min(1).max(4000),
   history: z
@@ -33,6 +33,11 @@ Ask ONE focused question at a time if the idea is still vague. Keep replies shor
 const STUDENT_SYSTEM = `You are SkillBridge's student assistant.
 You help a student/freelancer UNDERSTAND a job posting they want to work on: explain what the owner wants, what skills matter, what a good proposal/quote should cover, and what questions to ask.
 Use the job details provided. Be encouraging but honest about gaps between the job requirements and the student's profile.
+Keep replies short, structured and practical.`;
+
+const MENTOR_SYSTEM = `You are SkillBridge's mentor assistant.
+You help a MENTOR guide hired students on a job: suggest how to break work down, what to check in milestone submissions, what feedback to give, and when to ask for revisions vs approve.
+Use the job details provided. Be practical, constructive and specific.
 Keep replies short, structured and practical.`;
 
 const CHAT_FALLBACK =
@@ -103,7 +108,25 @@ export function aiRoutes() {
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
     let system = OWNER_SYSTEM;
-    if (parsed.data.mode === "student") {
+    if (parsed.data.mode === "mentor") {
+      let context = "No specific job selected.";
+      if (parsed.data.jobId) {
+        const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
+        if (job) {
+          context = [
+            `Job title: ${job.title}`,
+            `Description: ${job.description}`,
+            `Required skills: ${JSON.parse(job.requiredSkills || "[]").join(", ") || "not listed"}`,
+            `Budget range: ₹${job.budgetMin ?? "?"} - ₹${job.budgetMax ?? "?"}`,
+            `Deadline: ${job.deadline ?? "flexible"}`,
+            job.acceptanceCriteria ? `Acceptance criteria: ${job.acceptanceCriteria}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
+      }
+      system = `${MENTOR_SYSTEM}\n\nJOB POSTING:\n${context}`;
+    } else if (parsed.data.mode === "student") {
       let context = "No specific job selected.";
       if (parsed.data.jobId) {
         const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
@@ -186,12 +209,22 @@ Business description: ${parsed.data.description}`;
     const parsed = connectRepoSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
-    // Linking a repo to a job: only the job's owner may do it.
+    // Linking a repo to a job: the owner, a hired team member, the mentor
+    // (or an admin) may do it — the repo then shows on the job page.
     if (parsed.data.jobId) {
       const [job] = await db.select().from(jobs).where(eq(jobs.id, parsed.data.jobId));
       if (!job) return c.json({ error: "Job not found" }, 404);
-      if (job.ownerId !== user.id && user.role !== "admin") {
-        return c.json({ error: "Only the job owner can link a repo to this job" }, 403);
+      const team = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.jobId, parsed.data.jobId), eq(teamMembers.userId, user.id)));
+      const allowed =
+        user.role === "admin" ||
+        job.ownerId === user.id ||
+        job.mentorId === user.id ||
+        team.length > 0;
+      if (!allowed) {
+        return c.json({ error: "Only the job's owner, team members or mentor can link a repo" }, 403);
       }
     }
 
@@ -264,16 +297,37 @@ Business description: ${parsed.data.description}`;
     return c.json(enriched);
   });
 
-  app.post("/github/repos/:id/review", async (c) => {
+  async function canManageRepo(db: AppEnv["Variables"]["db"], user: AuthUser, repo: typeof aiRepos.$inferSelect): Promise<boolean> {
+  if (user.role === "admin" || repo.userId === user.id) return true;
+  if (repo.jobId) {
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, repo.jobId));
+    if (job) {
+      const team = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.jobId, repo.jobId), eq(teamMembers.userId, user.id)));
+      return job.ownerId === user.id || job.mentorId === user.id || team.length > 0;
+    }
+  }
+  return false;
+}
+
+app.post("/github/repos/:id/review", async (c) => {
     const db = c.var.db;
     const user = c.get("user");
     const { id } = c.req.param();
+    const body = await c.req.json().catch(() => ({}));
+    const scopeParsed = z
+      .object({ scope: z.enum(["latest", "commits", "repo"]).optional(), count: z.number().int().min(1).max(20).optional() })
+      .safeParse(body);
+    if (!scopeParsed.success) return c.json({ error: scopeParsed.error.flatten() }, 400);
 
     const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
     if (!repo) return c.json({ error: "Repo not found" }, 404);
-    if (repo.userId !== user.id && user.role !== "admin") {
-      return c.json({ error: "Forbidden" }, 403);
-    }
+
+    // Allowed: repo owner, admins, or any participant of the linked job
+    const allowed = await canManageRepo(db, user, repo);
+    if (!allowed) return c.json({ error: "Forbidden" }, 403);
 
     // Daily review cap (protects the AI free tier)
     const today = new Date().toISOString().slice(0, 10);
@@ -286,7 +340,10 @@ Business description: ${parsed.data.description}`;
       return c.json({ error: `Daily review limit reached (${cap}/day). Try again tomorrow.` }, 429);
     }
 
-    const run = await runReviewForRepo(c.env, db, repo);
+    const run = await runReviewForRepo(c.env, db, repo, {
+      scope: scopeParsed.data.scope ?? "latest",
+      count: scopeParsed.data.count,
+    });
     if (run.status === "failed") {
       return c.json({ error: "Review failed — check that the token is valid and the repo exists", run }, 502);
     }
@@ -312,7 +369,7 @@ Business description: ${parsed.data.description}`;
 
     const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
     if (!repo) return c.json({ error: "Repo not found" }, 404);
-    if (repo.userId !== user.id && user.role !== "admin") {
+    if (!(await canManageRepo(db, user, repo))) {
       return c.json({ error: "Forbidden" }, 403);
     }
 
@@ -339,7 +396,7 @@ Business description: ${parsed.data.description}`;
 
     const [repo] = await db.select().from(aiRepos).where(eq(aiRepos.id, id));
     if (!repo) return c.json({ error: "Repo not found" }, 404);
-    if (repo.userId !== user.id && user.role !== "admin") {
+    if (!(await canManageRepo(db, user, repo))) {
       return c.json({ error: "Forbidden" }, 403);
     }
 

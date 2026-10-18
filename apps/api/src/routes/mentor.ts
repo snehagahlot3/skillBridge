@@ -42,13 +42,28 @@ export function mentorRoutes() {
   app.use("*", authMiddleware);
   app.use("*", requireRole("mentor", "admin"));
 
-  // Live jobs without a mentor — mentors can claim these themselves
+  // Live jobs without a mentor — mentors can claim these themselves.
+  // Started jobs (in_progress/awarded/delivered) float to the top so they
+  // are more visible, then open jobs, then by newest first.
   app.get("/queue", async (c) => {
     const db = c.var.db;
     const rows = await db
       .select()
       .from(jobs)
-      .where(and(isNull(jobs.mentorId), inArray(jobs.status, ["open", "awarded", "in_progress"])));
+      .where(and(isNull(jobs.mentorId), inArray(jobs.status, ["open", "awarded", "in_progress", "delivered"])));
+
+    const priority: Record<string, number> = {
+      in_progress: 0,
+      delivered: 1,
+      awarded: 2,
+      open: 3,
+    };
+    rows.sort((a, b) => {
+      const pa = priority[a.status] ?? 9;
+      const pb = priority[b.status] ?? 9;
+      if (pa !== pb) return pa - pb;
+      return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+    });
 
     const enriched = await Promise.all(rows.map((j) => enrichJob(db, j)));
     return c.json(enriched);

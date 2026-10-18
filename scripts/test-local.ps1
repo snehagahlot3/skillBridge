@@ -333,8 +333,8 @@ Assert "repos listed" ($reposList.ok -and $reposList.json.Count -eq 1 -and $repo
 Assert "repo linked to job title" ($reposList.json[0].jobId -eq $jobId -and $reposList.json[0].jobTitle)
 Assert "token not leaked" (-not ($reposList.json[0].PSObject.Properties.Name -contains "tokenEnc") -and $reposList.Content -notmatch "ghp_mock")
 
-$foreignLink = Call POST "/api/ai/github/repos" @{ owner = "x"; repo = "y"; token = "ghp_mocktoken123456789"; jobId = $jobId } $priyaToken
-Assert "non-owner cannot link to job" ($foreignLink.status -eq 403)
+$foreignLink = Call POST "/api/ai/github/repos" @{ owner = "x"; repo = "y"; token = "ghp_mocktoken123456789"; jobId = $jobId } $outsider.json.token
+Assert "non-participant cannot link to job" ($foreignLink.status -eq 403)
 
 $review = Call POST "/api/ai/github/repos/$repoId/review" $null $rajeshToken
 Assert "review now runs" ($review.status -eq 200 -and $review.json.status -eq "done")
@@ -349,9 +349,9 @@ Assert "job detail lists linked repo" ($jobDetail.json.aiRepos.Count -eq 1 -and 
 $runs = Call GET "/api/ai/github/repos/$repoId/runs" $null $rajeshToken
 Assert "runs history" ($runs.ok -and $runs.json.Count -ge 1 -and $runs.json[0].status -eq "done")
 
-$foreignRuns = Call GET "/api/ai/github/repos/$repoId/runs" $null $priyaToken
+$foreignRuns = Call GET "/api/ai/github/repos/$repoId/runs" $null $outsider.json.token
 Assert "other user cannot see runs" ($foreignRuns.status -eq 403)
-$badDelete = Call DELETE "/api/ai/github/repos/$repoId" $null $priyaToken
+$badDelete = Call DELETE "/api/ai/github/repos/$repoId" $null $outsider.json.token
 Assert "other user cannot delete" ($badDelete.status -eq 403)
 
 $del = Call DELETE "/api/ai/github/repos/$repoId" $null $rajeshToken
@@ -459,6 +459,94 @@ Assert "final milestone approved with passing review" ($finalPass.status -eq 200
 $job005 = Call GET "/api/jobs/job-005" $null $mentorToken
 Assert "gate visible on job detail" ($job005.json.aiGateThreshold -eq 1)
 $null = Call DELETE "/api/ai/github/repos/$gateRepoId" $null $fatimaToken
+
+Write-Host "`n=== 14. Restart, business reject, repo participants, review scopes, email ==="
+$completedGuard = Call POST "/api/admin/jobs/job-006/remove-member" @{ userId = "user-004" } $adminToken
+Assert "cannot free member from completed job" ($completedGuard.status -eq 400)
+$restartMentor = Call POST "/api/jobs/job-006/restart" $null $meeraToken
+Assert "mentor restarts completed job" ($restartMentor.status -eq 200)
+$job006a = Call GET "/api/jobs/job-006" $null $meeraToken
+Assert "restarted job in_progress" ($job006a.json.status -eq "in_progress")
+$restartAgain = Call POST "/api/jobs/job-006/restart" $null $priyaToken
+Assert "restart only when completed" ($restartAgain.status -eq 400)
+$restartOutsider = Call POST "/api/jobs/job-006/restart" $null $nehaToken
+Assert "outsider cannot restart" ($restartOutsider.status -eq 403)
+
+$reject = Call PATCH "/api/admin/businesses/user-003/reject" $null $adminToken
+Assert "admin rejects business" ($reject.status -eq 200)
+$bizList = Call GET "/api/admin/businesses" $null $adminToken
+$nairBiz = $bizList.json | Where-Object { $_.userId -eq "user-003" }
+Assert "rejected status stored" ($nairBiz.verificationStatus -eq "rejected")
+$null = Call PATCH "/api/admin/businesses/user-003/verify" $null $adminToken
+
+$mentorRepo = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789"; jobId = "job-005" } $mentorToken
+Assert "mentor can link repo to job" ($mentorRepo.status -eq 201)
+$mentorRepoId = $mentorRepo.json.id
+$teamReview = Call POST "/api/ai/github/repos/$mentorRepoId/review" @{ scope = "commits"; count = 2 } $arjunToken
+Assert "team member can trigger review" ($teamReview.status -eq 200 -and $teamReview.json.status -eq "done")
+Assert "commit-range review stored" ($teamReview.json.commitMessage -like "*2 recent commits*")
+$repoReview = Call POST "/api/ai/github/repos/$mentorRepoId/review" @{ scope = "repo" } $mentorToken
+Assert "whole repo review runs" ($repoReview.status -eq 200 -and $repoReview.json.status -eq "done")
+$repoRuns = Call GET "/api/ai/github/repos/$mentorRepoId/runs" $null $arjunToken
+Assert "runs visible to team member" ($repoRuns.ok -and ($repoRuns.json | Where-Object { $_.kind -eq "repo" -and $_.status -eq "done" }))
+$vikram = Call POST "/api/auth/login" @{ email = "vikram@demo.com"; password = "demo12345" }
+$vikramLink = Call POST "/api/ai/github/repos" @{ owner = "testorg"; repo = "testrepo"; token = "ghp_mocktoken123456789"; jobId = "job-005" } $vikram.json.token
+Assert "unrelated user cannot link repo" ($vikramLink.status -eq 403)
+$job005r = Call GET "/api/jobs/job-005" $null $arjunToken
+Assert "repo + runs visible on project page" ($job005r.json.aiRepos.Count -ge 1 -and $job005r.json.aiRepos[0].runs.Count -ge 2)
+$null = Call DELETE "/api/ai/github/repos/$mentorRepoId" $null $mentorToken
+
+$emailLog = Call GET "/api/admin/email-log" $null $adminToken
+Assert "emails logged (mocked)" ($emailLog.ok -and $emailLog.json.Count -ge 5)
+Assert "ai review summary emailed" ($emailLog.json | Where-Object { $_.subject -like "*AI review*" -or $_.subject -like "*AI PR review*" })
+
+Write-Host "`n=== 15. Profile completion gates ==="
+$newUserEmail = "gated$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())@demo.com"
+$gatedUser = Call POST "/api/auth/signup" @{ name = "Gated User"; email = $newUserEmail; password = "password123"; profile = @{ skills = @() } }
+Assert "incomplete-profile user signs up" ($gatedUser.status -eq 200)
+$gatedToken = $gatedUser.json.token
+$gateApply = Call POST "/api/applications/job-001/apply" @{ positionId = "pos-1a"; pitch = "I want to apply but my profile is incomplete and this should be blocked by the gate."; quoteAmount = 5000 } $gatedToken
+Assert "apply blocked until student profile complete" ($gateApply.status -eq 400 -and $gateApply.error -like "*student profile*")
+$gatePost = Call POST "/api/jobs" @{ title = "Gated job post"; description = "This post should be blocked until the business profile is complete."; category = "Design" } $gatedToken
+Assert "post blocked until business profile complete" ($gatePost.status -eq 400 -and $gatePost.error -like "*business profile*")
+$null = Call PATCH "/api/profile" @{ skills = @("Canva"); college = "Demo College"; bio = "A student eager to work on real projects." } $gatedToken
+$gateApplyOk = Call POST "/api/applications/job-001/apply" @{ positionId = "pos-1a"; pitch = "Profile completed now - this application should go through the gate."; quoteAmount = 5000 } $gatedToken
+Assert "apply passes after completing profile" ($gateApplyOk.status -eq 201)
+$null = Call PUT "/api/profile/business" @{ businessName = "Gated Traders"; city = "Delhi" } $gatedToken
+$gatePostOk = Call POST "/api/jobs" @{ title = "Gated job post"; description = "Business profile complete - this post should now be allowed."; category = "Design" } $gatedToken
+Assert "post passes after completing business profile" ($gatePostOk.status -eq 201)
+
+Write-Host "`n=== 16. File uploads, mentor chat mode, queue ordering, test email ==="
+$tmpFile = "$env:TEMP\skillbridge-test-attachment.txt"
+"handover attachment content $([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Set-Content $tmpFile -NoNewline
+$uploadOut = curl.exe -s -X POST -H "Authorization: Bearer $rajeshToken" -F "file=@$tmpFile" "$Base/api/files"
+$uploadJson = $uploadOut | ConvertFrom-Json
+Assert "file upload returns key" ($uploadJson.key -and $uploadJson.name -eq "skillbridge-test-attachment.txt")
+$dlOut = "$env:TEMP\skillbridge-test-download.txt"
+curl.exe -s -H "Authorization: Bearer $rajeshToken" "$Base/api/files/$($uploadJson.key)" -o $dlOut
+Assert "file download matches" ((Get-Content $dlOut -Raw) -eq (Get-Content $tmpFile -Raw))
+
+$attachJob = Call POST "/api/jobs" @{
+  title = "Job with reference files"
+  description = "This job carries reference files for applicants to look at."
+  category = "Design"
+  attachments = @(@{ key = $uploadJson.key; name = $uploadJson.name })
+} $rajeshToken
+Assert "job created with attachments" ($attachJob.status -eq 201 -and $attachJob.json.attachments.Count -eq 1)
+
+$mentorChat = Call POST "/api/ai/chat" @{ mode = "mentor"; jobId = "job-005"; message = "How should I review the 3D renders milestone?" } $meeraToken
+Assert "mentor mode ai chat" ($mentorChat.status -eq 200 -and $mentorChat.json.reply.Length -gt 20)
+
+$releaseForQueue = Call POST "/api/mentor/jobs/job-005/release" $null $mentorToken
+Assert "mentor releases job-005 for queue test" ($releaseForQueue.status -eq 200)
+$queueOrdered = Call GET "/api/mentor/queue" $null $mentorToken
+$queueIds = @($queueOrdered.json | ForEach-Object { $_.id })
+$idx005 = [array]::IndexOf($queueIds, "job-005")
+$idxOpen = [array]::IndexOf($queueIds, "job-001")
+Assert "started jobs above open jobs in mentor queue" ($idx005 -ge 0 -and $idx005 -lt $idxOpen -and $queueOrdered.json[0].status -eq "in_progress")
+
+$emailTest = Call POST "/api/admin/test-email" @{ to = "junejatanubhav@gmail.com"; subject = "SkillBridge handover test" } $adminToken
+Assert "admin test email (mocked) logged" ($emailTest.status -eq 200 -and $emailTest.json.last.status -eq "mocked")
 
 Write-Host "`n======================"
 Write-Host "RESULT: $($script:pass) passed, $($script:fail) failed" -ForegroundColor $(if ($script:fail -eq 0) { "Green" } else { "Red" })

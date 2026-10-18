@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq, desc, and } from "drizzle-orm";
 import { reviews, jobs, users, teamMembers } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
+import { sendEmailTo } from "../lib/email";
 import type { AppEnv } from "../types";
 
 const reviewSchema = z.object({
@@ -80,6 +81,15 @@ export function reviewRoutes() {
       rating: parsed.data.rating,
       comment: parsed.data.comment,
     });
+
+    const [reviewee] = await db.select().from(users).where(eq(users.id, revieweeId));
+    await sendEmailTo(
+      c.env,
+      db,
+      reviewee?.email,
+      `SkillBridge: you received a ${parsed.data.rating}/5 review`,
+      `${user.name} left you a ${parsed.data.rating}/5 review on "${job?.title ?? "a job"}".${parsed.data.comment ? `\n\n"${parsed.data.comment}"` : ""}`
+    );
 
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     return c.json(review, 201);

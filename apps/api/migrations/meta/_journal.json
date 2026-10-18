@@ -5,6 +5,8 @@
     { "idx": 0, "version": "6", "when": 1760640000000, "tag": "0000_revamp", "breakpoints": true },
     { "idx": 1, "version": "6", "when": 1760800000000, "tag": "0001_ai_github", "breakpoints": true },
     { "idx": 2, "version": "6", "when": 1760900000000, "tag": "0002_ai_repo_job", "breakpoints": true },
-    { "idx": 3, "version": "6", "when": 1761000000000, "tag": "0003_ai_pr_review_gate", "breakpoints": true }
+    { "idx": 3, "version": "6", "when": 1761000000000, "tag": "0003_ai_pr_review_gate", "breakpoints": true },
+    { "idx": 4, "version": "6", "when": 1761100000000, "tag": "0004_email_log", "breakpoints": true },
+    { "idx": 5, "version": "6", "when": 1761200000000, "tag": "0005_attachments", "breakpoints": true }
   ]
 }

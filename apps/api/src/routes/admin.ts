@@ -12,10 +12,12 @@ import {
   applications,
   jobUpdates,
   auditLog,
+  emailLog,
 } from "../db/schema";
 import { authMiddleware, requireRole } from "../middleware/auth";
 import { hashPassword } from "../lib/crypto";
 import { transitionJobStatus } from "../lib/stateMachine";
+import { sendEmail } from "../lib/email";
 import type { AppEnv } from "../types";
 
 const createMentorSchema = z.object({
@@ -59,6 +61,40 @@ export function adminRoutes() {
       jobsByStatus: byStatus,
       reviews: allReviews.length,
     });
+  });
+
+  // Outgoing email log (for verifying the email workflow)
+  app.get("/email-log", async (c) => {
+    const db = c.var.db;
+    const rows = await db.select().from(emailLog).orderBy(desc(emailLog.createdAt)).limit(50);
+    return c.json(rows);
+  });
+
+  // Send a test email (ops / handover checks)
+  app.post("/test-email", async (c) => {
+    const db = c.var.db;
+    const body = await c.req.json().catch(() => ({}));
+    const parsed = z
+      .object({
+        to: z.string().email(),
+        subject: z.string().optional(),
+        text: z.string().optional(),
+      })
+      .safeParse(body);
+    if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
+
+    const result = await sendEmail(c.env, db, {
+      to: parsed.data.to,
+      subject: parsed.data.subject || "SkillBridge test email",
+      text: parsed.data.text || "This is a test email from the SkillBridge email workflow. If you can read this, SMTP is configured correctly. ✅",
+    });
+    void result;
+    const [last] = await db
+      .select()
+      .from(emailLog)
+      .orderBy(desc(emailLog.createdAt))
+      .limit(1);
+    return c.json({ ok: true, last });
   });
 
   // Create mentor accounts (no public signup for mentors)
@@ -245,6 +281,24 @@ export function adminRoutes() {
     return c.json({ ok: true });
   });
 
+  app.patch("/businesses/:userId/reject", async (c) => {
+    const db = c.var.db;
+    const actor = c.get("user");
+    const { userId } = c.req.param();
+    await db
+      .update(businessProfiles)
+      .set({ verificationStatus: "rejected" })
+      .where(eq(businessProfiles.userId, userId));
+    await db.insert(auditLog).values({
+      id: crypto.randomUUID(),
+      actorId: actor.id,
+      action: "business_rejected",
+      entity: "business_profile",
+      entityId: userId,
+    });
+    return c.json({ ok: true });
+  });
+
   // Jobs overview + delist/relist
   app.get("/jobs", async (c) => {
     const db = c.var.db;
@@ -367,6 +421,10 @@ export function adminRoutes() {
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
     if (!job) return c.json({ error: "Job not found" }, 404);
     if (!body.userId) return c.json({ error: "userId is required" }, 400);
+
+    if (["completed", "cancelled"].includes(job.status)) {
+      return c.json({ error: "Cannot free a member from a completed job — restart the job instead" }, 400);
+    }
 
     const [member] = await db
       .select()

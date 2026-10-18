@@ -13,6 +13,7 @@ import {
 } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
 import { transitionJobStatus } from "../lib/stateMachine";
+import { sendEmailTo, notifyJobParticipants } from "../lib/email";
 import type { AppEnv } from "../types";
 
 const applySchema = z.object({
@@ -116,6 +117,16 @@ export function applicationRoutes() {
     if (job.ownerId === user.id) return c.json({ error: "You cannot apply to your own job" }, 400);
     if (job.status !== "open") return c.json({ error: "Job is not open for quotes" }, 400);
 
+    // Student profile gate: apply only after completing the student profile
+    const [profile] = await db.select().from(profiles).where(eq(profiles.userId, user.id));
+    const skills = profile ? JSON.parse(profile.skills || "[]") : [];
+    if (!profile || skills.length < 1 || !profile.college || !profile.bio) {
+      return c.json(
+        { error: "Complete your student profile (skills, college and bio) before applying — Profile tab → Talent profile." },
+        400
+      );
+    }
+
     const positions = parsePositions(job);
     const position = positions.find((p) => p.id === parsed.data.positionId);
     if (!position) return c.json({ error: "Position not found on this job" }, 400);
@@ -153,6 +164,15 @@ export function applicationRoutes() {
       pitch: parsed.data.pitch,
       quoteAmount: parsed.data.quoteAmount,
     });
+
+    const [owner] = await db.select().from(users).where(eq(users.id, job.ownerId));
+    await sendEmailTo(
+      c.env,
+      db,
+      owner?.email,
+      `SkillBridge: new quote on "${job.title}"`,
+      `${user.name} submitted a quote of ₹${parsed.data.quoteAmount} for ${job.title}. Review all quotes on the job page.`
+    );
 
     return c.json({ id, status: "pending" }, 201);
   });
@@ -295,6 +315,14 @@ export function applicationRoutes() {
       content: `${applicant?.name || "A user"} joined as ${position.title}. Quote: ₹${application.quoteAmount ?? 0}`,
     });
 
+    await sendEmailTo(
+      c.env,
+      db,
+      applicant?.email,
+      `SkillBridge: you're hired for "${job.title}"! 🎉`,
+      `You were hired for the ${position.title} position on "${job.title}". The team chat is open — say hi to the owner and mentor.`
+    );
+
     // If this position is now full, reject remaining pending quotes for it
     const teamAfter = await db
       .select()
@@ -327,6 +355,13 @@ export function applicationRoutes() {
         kind: "system",
         content: "Team complete! Work started — the chat is open for everyone.",
       });
+      await notifyJobParticipants(
+        c.env,
+        db,
+        job.id,
+        `SkillBridge: "${job.title}" — team complete, work started!`,
+        `The team for "${job.title}" is complete and work has started. The group chat is open for everyone.`
+      );
     }
 
     return c.json({ ok: true, teamComplete: allFilled });

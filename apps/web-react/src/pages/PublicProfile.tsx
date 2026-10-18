@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { FileText, Github, Globe, Linkedin } from "lucide-react";
 import { api, budgetLabel, type PublicUser } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -7,6 +7,7 @@ import { Stars, StatusBadge, VerifiedBadge } from "../components/ui";
 
 export default function PublicProfile() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user: viewer } = useAuth();
   const [data, setData] = useState<PublicUser | null>(null);
   const [error, setError] = useState("");
@@ -33,9 +34,19 @@ export default function PublicProfile() {
           <Link to="/" className="font-serif text-[22px] font-semibold text-ink tracking-tight hover:opacity-95">
             SkillBridge
           </Link>
-          <Link to="/" className="btn-ghost text-sm">
-            Home
-          </Link>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => navigate(-1)} className="btn-ghost text-sm">
+              Back
+            </button>
+            {viewer && (
+              <Link
+                to={viewer.role === "mentor" ? "/mentor" : viewer.role === "admin" ? "/admin" : "/dashboard"}
+                className="btn-secondary text-sm"
+              >
+                My dashboard
+              </Link>
+            )}
+          </div>
         </div>
       </header>
 

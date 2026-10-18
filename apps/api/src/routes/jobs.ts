@@ -16,6 +16,7 @@ import {
 } from "../db/schema";
 import { authMiddleware } from "../middleware/auth";
 import { transitionJobStatus, type JobStatus } from "../lib/stateMachine";
+import { notifyJobParticipants, sendEmailTo } from "../lib/email";
 import type { AppEnv, AuthUser } from "../types";
 
 const createJobSchema = z.object({
@@ -30,6 +31,10 @@ const createJobSchema = z.object({
   budgetMax: z.number().nonnegative().optional(),
   deadline: z.string().optional(),
   acceptanceCriteria: z.string().optional(),
+  attachments: z
+    .array(z.object({ key: z.string().min(1), name: z.string().min(1) }))
+    .max(20)
+    .optional(),
   milestones: z
     .array(z.object({ title: z.string().min(1), dueDate: z.string().optional() }))
     .optional(),
@@ -40,6 +45,11 @@ const addMilestonesSchema = z.object({
 });
 
 const updateSchema = z.object({ content: z.string().min(1) });
+
+const deliverSchema = z.object({
+  content: z.string().min(1),
+  fileKeys: z.array(z.string().min(1)).max(20).optional(),
+});
 
 type JobRow = typeof jobs.$inferSelect;
 
@@ -85,6 +95,7 @@ async function jobWithDetails(db: AppEnv["Variables"]["db"], job: JobRow) {
     ...job,
     requiredSkills: JSON.parse(job.requiredSkills || "[]"),
     positions: parsePositions(job),
+    attachments: job.attachments ? JSON.parse(job.attachments) : [],
     owner: owner
       ? {
           id: owner.id,
@@ -139,6 +150,18 @@ export function jobRoutes() {
     const parsed = createJobSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
+    // Business profile gate: users post jobs only after completing it
+    const [business] = await db
+      .select()
+      .from(businessProfiles)
+      .where(eq(businessProfiles.userId, user.id));
+    if (!business || !business.businessName || !business.city) {
+      return c.json(
+        { error: "Complete your business profile (business name and city) before posting jobs — Profile tab → Business details." },
+        400
+      );
+    }
+
     const id = crypto.randomUUID();
     // Positions are optional: a job posted without positions is a simple
     // single-freelancer job — owner picks ONE applicant.
@@ -163,6 +186,9 @@ export function jobRoutes() {
       budgetMax: parsed.data.budgetMax,
       deadline: parsed.data.deadline,
       acceptanceCriteria: parsed.data.acceptanceCriteria,
+      attachments: parsed.data.attachments?.length
+        ? JSON.stringify(parsed.data.attachments)
+        : null,
     });
 
     if (parsed.data.milestones?.length) {
@@ -291,28 +317,40 @@ export function jobRoutes() {
     }
     const aiReposEnriched = await Promise.all(
       linkedRepos.map(async (r) => {
-        const [lastRun] = await db
+        const lastRuns = await db
           .select()
           .from(reviewRuns)
           .where(eq(reviewRuns.repoId, r.id))
           .orderBy(desc(reviewRuns.createdAt))
-          .limit(1);
+          .limit(5);
         return {
           id: r.id,
           owner: r.owner,
           repo: r.repo,
           branch: r.branch,
           lastReviewedSha: r.lastReviewedSha,
-          lastRun: lastRun
+          lastRun: lastRuns[0]
             ? {
-                commitSha: lastRun.commitSha,
-                status: lastRun.status,
-                rating: lastRun.rating,
-                summary: lastRun.summary,
-                commentUrl: lastRun.commentUrl,
-                createdAt: lastRun.createdAt,
+                commitSha: lastRuns[0].commitSha,
+                status: lastRuns[0].status,
+                rating: lastRuns[0].rating,
+                summary: lastRuns[0].summary,
+                commentUrl: lastRuns[0].commentUrl,
+                createdAt: lastRuns[0].createdAt,
               }
             : null,
+          runs: lastRuns.map((run) => ({
+            id: run.id,
+            kind: run.kind,
+            prNumber: run.prNumber,
+            commitSha: run.commitSha,
+            commitMessage: run.commitMessage,
+            status: run.status,
+            rating: run.rating,
+            summary: run.summary,
+            commentUrl: run.commentUrl,
+            createdAt: run.createdAt,
+          })),
         };
       })
     );
@@ -455,6 +493,7 @@ export function jobRoutes() {
           authorName: author?.name || "System",
           authorRole: author?.role || "system",
           milestoneTitle: milestone?.title || null,
+          attachments: u.attachments ? JSON.parse(u.attachments) : [],
         };
       })
     );
@@ -503,13 +542,13 @@ export function jobRoutes() {
     return c.json({ ok: true });
   });
 
-  // A team member delivers final work
+  // A team member delivers final work (with optional file attachments)
   app.post("/:id/deliver", async (c) => {
     const db = c.var.db;
     const user = c.get("user");
     const { id } = c.req.param();
     const body = await c.req.json();
-    const parsed = updateSchema.safeParse(body);
+    const parsed = deliverSchema.safeParse(body);
     if (!parsed.success) return c.json({ error: parsed.error.flatten() }, 400);
 
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
@@ -519,11 +558,24 @@ export function jobRoutes() {
 
     const result = await transitionJobStatus(db, id, "delivered", user.id);
     if (!result.ok) return c.json({ error: result.error }, 400);
-    await logUpdate(db, id, user.id, "submission", parsed.data.content);
+
+    const attachments = (parsed.data.fileKeys ?? []).map((key) => ({
+      key,
+      name: key.split("/").pop()?.split("-").slice(1).join("-") || "file",
+    }));
+
+    await db.insert(jobUpdates).values({
+      id: crypto.randomUUID(),
+      jobId: id,
+      authorId: user.id,
+      kind: "submission",
+      content: parsed.data.content,
+      attachments: attachments.length ? JSON.stringify(attachments) : null,
+    });
     return c.json({ ok: true });
   });
 
-  // Owner accepts final delivery -> completed
+  // Owner accepts final delivery -> completed (owner or admin)
   app.post("/:id/accept", async (c) => {
     const db = c.var.db;
     const user = c.get("user");
@@ -531,11 +583,50 @@ export function jobRoutes() {
 
     const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
     if (!job) return c.json({ error: "Not found" }, 404);
-    if (job.ownerId !== user.id) return c.json({ error: "Forbidden" }, 403);
+    if (job.ownerId !== user.id && user.role !== "admin") {
+      return c.json({ error: "Only the owner (or an admin) can mark the job as done" }, 403);
+    }
 
     const result = await transitionJobStatus(db, id, "completed", user.id);
     if (!result.ok) return c.json({ error: result.error }, 400);
     await logUpdate(db, id, user.id, "system", "Owner accepted the delivery. Job completed!");
+    await notifyJobParticipants(
+      c.env,
+      db,
+      id,
+      `SkillBridge: ${job.title} — job completed 🎉`,
+      `The job "${job.title}" has been completed. Log in to leave a review for the other party.`
+    );
+    return c.json({ ok: true });
+  });
+
+  // Restart a completed job (owner, team, mentor or admin)
+  app.post("/:id/restart", async (c) => {
+    const db = c.var.db;
+    const user = c.get("user");
+    const { id } = c.req.param();
+
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, id));
+    if (!job) return c.json({ error: "Not found" }, 404);
+
+    const onTeam = await isTeamMember(db, id, user.id);
+    const isParticipant =
+      user.role === "admin" || job.ownerId === user.id || onTeam || job.mentorId === user.id;
+    if (!isParticipant) return c.json({ error: "Forbidden" }, 403);
+    if (job.status !== "completed") {
+      return c.json({ error: "Only completed jobs can be restarted" }, 400);
+    }
+
+    const result = await transitionJobStatus(db, id, "in_progress", user.id);
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    await logUpdate(db, id, user.id, "system", `${user.name} restarted the job — work has resumed.`);
+    await notifyJobParticipants(
+      c.env,
+      db,
+      id,
+      `SkillBridge: ${job.title} — job restarted`,
+      `${user.name} restarted the job "${job.title}". Work has resumed — check the progress timeline.`
+    );
     return c.json({ ok: true });
   });
 

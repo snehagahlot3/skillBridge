@@ -22,7 +22,7 @@ const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   delivered: ["completed", "revision_requested", "disputed"],
   revision_requested: ["in_progress"],
   disputed: ["completed", "in_progress", "cancelled"],
-  completed: [],
+  completed: ["in_progress"], // restart the job
   cancelled: [],
   delisted: ["open"],
 };

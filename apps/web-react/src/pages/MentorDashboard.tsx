@@ -225,13 +225,12 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
   const [busy, setBusy] = useState(false);
   const [gateValue, setGateValue] = useState(job.aiGateThreshold != null ? String(job.aiGateThreshold) : "");
 
-  async function run(fn: () => Promise<unknown>, msg: string) {
+  async function setGate(value: string) {
     setBusy(true);
     try {
-      await fn();
-      onError(msg);
-      setRevising(null);
-      setContent("");
+      const threshold = value ? Number(value) : null;
+      await api.mentorAiGate(job.id, threshold);
+      onError(threshold == null ? "AI review gate disabled." : `AI review gate set to ${threshold}/5.`);
       onChanged();
     } catch (err) {
       onError((err as Error).message);
@@ -240,12 +239,13 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
     }
   }
 
-  async function setGate(value: string) {
+  async function run(fn: () => Promise<unknown>, msg: string) {
     setBusy(true);
     try {
-      const threshold = value ? Number(value) : null;
-      await api.mentorAiGate(job.id, threshold);
-      onError(threshold == null ? "AI review gate disabled." : `AI review gate set to ${threshold}/5.`);
+      await fn();
+      onError(msg);
+      setRevising(null);
+      setContent("");
       onChanged();
     } catch (err) {
       onError((err as Error).message);
@@ -325,20 +325,24 @@ function MentorJobModal({ job, onClose, onChanged, onError }: {
           <Link to={`/jobs/${job.id}`} className="btn-ghost">Full job page</Link>
         </section>
 
-        <section className="border-t pt-4">
-          <h4 className="font-semibold text-sm text-gray-700 mb-2">AI review gate</h4>
-          <p className="text-xs text-gray-500 mb-2">
+        <section className="pt-3 border-t border-line">
+          <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-accent mb-2">AI review gate</h4>
+          <p className="text-xs text-muted mb-2 leading-relaxed">
             Require a passing AI code review before the FINAL milestone can be approved.
           </p>
           <div className="flex items-center gap-2">
-            <select className="input max-w-xs" value={gateValue} onChange={(e) => { setGateValue(e.target.value); setGate(e.target.value); }}>
+            <select
+              className="input text-xs max-w-[160px]"
+              value={gateValue}
+              onChange={(e) => { setGateValue(e.target.value); setGate(e.target.value); }}
+            >
               <option value="">Off</option>
               <option value="3">Require ≥ 3/5</option>
               <option value="4">Require ≥ 4/5</option>
               <option value="5">Require ≥ 5/5</option>
             </select>
             {job.aiGateThreshold != null && (
-              <span className="badge bg-brand-50 text-brand-700">final milestone gated at {job.aiGateThreshold}/5</span>
+              <span className="badge-lavender">final milestone gated at {job.aiGateThreshold}/5</span>
             )}
           </div>
         </section>

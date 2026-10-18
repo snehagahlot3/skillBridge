@@ -177,6 +177,106 @@ export async function postPrFormalReview(
   return (await res.json()) as { state: string; html_url: string };
 }
 
+const MOCK_COMMITS: CommitInfo[] = [
+  { sha: "mock-commit-aaaaaaa", message: "mock: add volume discount logic" },
+  { sha: "mock-commit-bbbbbbb", message: "mock: add price formatting helper" },
+  { sha: "mock-commit-ccccccc", message: "mock: add cart total helper" },
+];
+
+const MOCK_COMMIT_DIFFS: Record<string, string> = {
+  "mock-commit-aaaaaaa": MOCK_DIFF,
+  "mock-commit-bbbbbbb": `diff --git a/src/format.ts b/src/format.ts
+--- a/src/format.ts
++++ b/src/format.ts
+@@ -1,3 +1,8 @@
++export function formatPrice(price) {
++  if (price == undefined) return "N/A";
++  return "$" + price;
++}
+`,
+  "mock-commit-ccccccc": `diff --git a/src/cart.ts b/src/cart.ts
+--- a/src/cart.ts
++++ b/src/cart.ts
+@@ -1,3 +1,9 @@
++export function getCartTotal(cart) {
++  let sum = 0;
++  for (const item of cart.items) {
++    sum += item.price * item.qty;
++  }
++  return sum;
++}
+`,
+};
+
+export async function getRecentCommits(
+  env: Env,
+  owner: string,
+  repo: string,
+  branch: string,
+  count: number,
+  token: string
+): Promise<CommitInfo[]> {
+  if (env.AI_GITHUB_MOCK === "1") return MOCK_COMMITS.slice(0, count);
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits?sha=${branch}&per_page=${count}`,
+    { headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json" } }
+  );
+  if (!res.ok) throw new Error(`GitHub commits: HTTP ${res.status}`);
+  const data = (await res.json()) as { sha: string; commit: { message: string } }[];
+  return data.map((c) => ({ sha: c.sha, message: c.commit.message.split("\n")[0] }));
+}
+
+export async function getCommitDiffForSha(
+  env: Env,
+  owner: string,
+  repo: string,
+  sha: string,
+  token: string
+): Promise<string> {
+  if (env.AI_GITHUB_MOCK === "1") return MOCK_COMMIT_DIFFS[sha] ?? MOCK_DIFF;
+  return getCommitDiff(env, owner, repo, sha, token);
+}
+
+export interface RepoFile {
+  path: string;
+  content: string;
+}
+
+const MOCK_REPO_FILES: RepoFile[] = [
+  { path: "package.json", content: '{\n  "name": "mock-app",\n  "scripts": { "start": "node src/index.js" }\n}\n' },
+  { path: "src/pricing.ts", content: "export function calculatePrice(items) {\n  let total = 0;\n  for (const item of items) {\n    if (total > 1000) { total = total * 0.9; }\n    total += item.price * item.quantity;\n  }\n  return total;\n}\n" },
+  { path: "src/cart.ts", content: "export function getCartTotal(cart) {\n  let sum = 0;\n  for (const item of cart.items) { sum += item.price * item.qty; }\n  return sum;\n}\n" },
+];
+
+export async function getRepoTree(
+  env: Env,
+  owner: string,
+  repo: string,
+  branch: string,
+  token: string
+): Promise<RepoFile[]> {
+  if (env.AI_GITHUB_MOCK === "1") return MOCK_REPO_FILES;
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`,
+    { headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent", Accept: "application/vnd.github+json" } }
+  );
+  if (!res.ok) throw new Error(`GitHub tree: HTTP ${res.status}`);
+  const data = (await res.json()) as { tree?: { path: string; type: string; size?: number }[] };
+  const files = (data.tree ?? [])
+    .filter((t) => t.type === "blob" && (t.size ?? 0) < 100_000)
+    .slice(0, 200);
+  const out: RepoFile[] = [];
+  for (const f of files) {
+    const raw = await fetch(
+      `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${encodeURIComponent(f.path)}`,
+      { headers: { Authorization: `Bearer ${token}`, "User-Agent": "skillbridge-ai-agent" } }
+    );
+    if (!raw.ok) continue;
+    out.push({ path: f.path, content: (await raw.text()).slice(0, 30_000) });
+  }
+  return out;
+}
+
 export async function getLatestCommit(
   env: Env,
   owner: string,

@@ -10,6 +10,9 @@ export interface Env {
   AI_GITHUB_MOCK?: string;
   AI_GH_DAILY_CAP?: string;
   GH_WEBHOOK_SECRET?: string;
+  GMAIL_USER?: string;
+  GMAIL_APP_PASSWORD?: string;
+  EMAIL_MOCK?: string;
 }
 
 export interface AuthUser {
